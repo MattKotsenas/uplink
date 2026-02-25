@@ -22,13 +22,24 @@ export interface JsonRpcError {
   data?: unknown;
 }
 
-/** JSON-RPC 2.0 response — has id and either result or error. */
-export interface JsonRpcResponse {
+/** JSON-RPC 2.0 success response. */
+export interface JsonRpcSuccessResponse {
   jsonrpc: "2.0";
   id: number | string | null;
-  result?: unknown;
-  error?: JsonRpcError;
+  result: unknown;
+  error?: never;
 }
+
+/** JSON-RPC 2.0 error response. */
+export interface JsonRpcErrorResponse {
+  jsonrpc: "2.0";
+  id: number | string | null;
+  error: JsonRpcError;
+  result?: never;
+}
+
+/** JSON-RPC 2.0 response — has id and exactly one of result or error. */
+export type JsonRpcResponse = JsonRpcSuccessResponse | JsonRpcErrorResponse;
 
 /** Any JSON-RPC 2.0 message. */
 export type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
@@ -369,7 +380,7 @@ export function isSessionUpdatePlan(
 
 /** Create a JSON-RPC 2.0 request. */
 export function createRequest(
-  id: number,
+  id: number | string,
   method: string,
   params: unknown,
 ): JsonRpcRequest {
@@ -392,8 +403,23 @@ export function parseMessage(json: string): JsonRpcMessage {
     throw new Error("Invalid JSON-RPC message: missing jsonrpc 2.0 field");
   }
 
-  // Response: has id (or null) and result or error
+  // Response: has result or error
   if ("result" in obj || "error" in obj) {
+    if (!("id" in obj)) {
+      throw new Error("Invalid JSON-RPC response: missing id");
+    }
+    const hasResult = "result" in obj;
+    const hasError = "error" in obj;
+    if (hasResult && hasError) {
+      throw new Error(
+        "Invalid JSON-RPC response: must have either result or error, not both",
+      );
+    }
+    if (!hasResult && !hasError) {
+      throw new Error(
+        "Invalid JSON-RPC response: must have either result or error",
+      );
+    }
     return obj as JsonRpcResponse;
   }
 
