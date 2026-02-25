@@ -198,16 +198,20 @@ export class AcpClient {
 
   private handleOpen(callbacks?: StartCallbacks): void {
     this.clearReconnectTimer();
-    this.reconnectAttempts = 0;
     this.setState("initializing");
 
     this.initializeSession()
       .then(() => {
+        this.reconnectAttempts = 0;
         this.setState("ready");
         callbacks?.onReady?.();
       })
       .catch((error) => {
-        callbacks?.onError?.(error);
+        try {
+          callbacks?.onError?.(error);
+        } catch (err) {
+          console.error("Error in onError callback:", err);
+        }
         this.handleError(error);
         this.ws?.close();
       });
@@ -310,7 +314,11 @@ export class AcpClient {
     }
 
     const params = message.params as SessionUpdateParams;
-    this.options.onSessionUpdate?.(params.update);
+    try {
+      this.options.onSessionUpdate?.(params.update);
+    } catch (err) {
+      console.error("Error in onSessionUpdate callback:", err);
+    }
   }
 
   private handleRequest(message: JsonRpcRequest): void {
@@ -349,6 +357,7 @@ export class AcpClient {
         this.options.onPermissionRequest(params, once);
         return;
       } catch (error) {
+        console.error("Error in onPermissionRequest callback:", error);
         this.handleError(error as Error);
       }
     }
@@ -359,8 +368,14 @@ export class AcpClient {
   private createPermissionResponder(
     id: number | string,
   ): (outcome: PermissionOutcome) => void {
+    const sessionContext = this.sessionId;
     return (outcome) => {
       if (!this.isSocketOpen()) {
+        return;
+      }
+
+      if (this.sessionId !== sessionContext) {
+        console.warn("Ignoring permission response for stale session");
         return;
       }
 
@@ -454,7 +469,11 @@ export class AcpClient {
     }
 
     this.state = state;
-    this.options.onStateChange?.(state);
+    try {
+      this.options.onStateChange?.(state);
+    } catch (err) {
+      console.error("Error in onStateChange callback:", err);
+    }
   }
 
   private ensureReadyState(): void {
@@ -464,7 +483,11 @@ export class AcpClient {
   }
 
   private handleError(error: Error): void {
-    this.options.onError?.(error);
+    try {
+      this.options.onError?.(error);
+    } catch (err) {
+      console.error("Error in onError callback:", err);
+    }
   }
 
   private isSocketOpen(): boolean {
