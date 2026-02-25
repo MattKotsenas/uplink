@@ -82,10 +82,13 @@ export class ChatUI {
     html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
 
     // Links: [text](url) → <a href="url">text</a>
-    html = html.replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-    );
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
+      const trimmedUrl = (url as string).trim();
+      if (/^(https?:|mailto:|\/|#)/i.test(trimmedUrl)) {
+        return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      }
+      return `${text} (${trimmedUrl})`;
+    });
 
     return html;
   }

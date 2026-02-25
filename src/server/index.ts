@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
@@ -12,9 +13,21 @@ export interface ServerOptions {
   cwd?: string;                   // working directory for copilot
 }
 
-export function startServer(options: ServerOptions) {
+export interface ServerResult {
+  server: ReturnType<typeof createServer>;
+  sessionToken: string;
+  close: () => void;
+}
+
+export function startServer(options: ServerOptions): ServerResult {
   const app = express();
   const port = options.port || 3000;
+  const sessionToken = randomBytes(32).toString('hex');
+
+  // Token endpoint (must be before SPA fallback)
+  app.get('/api/token', (_req, res) => {
+    res.json({ token: sessionToken });
+  });
   
   // Serve static files if configured
   if (options.staticDir) {
@@ -36,7 +49,15 @@ export function startServer(options: ServerOptions) {
   let activeBridge: Bridge | null = null;
   let activeSocket: WebSocket | null = null;
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, request) => {
+    // Validate session token
+    const url = new URL(request.url!, `http://localhost`);
+    const token = url.searchParams.get('token');
+    if (token !== sessionToken) {
+      ws.close(4001, 'Unauthorized');
+      return;
+    }
+
     // Enforce single connection
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       console.log('New connection replacing existing one');
@@ -130,6 +151,24 @@ export function startServer(options: ServerOptions) {
     });
   });
 
-  return server;
+  const close = () => {
+    if (activeBridge) {
+      activeBridge.kill();
+      activeBridge = null;
+    }
+
+    for (const client of wss.clients) {
+      if (
+        client.readyState === WebSocket.OPEN ||
+        client.readyState === WebSocket.CONNECTING
+      ) {
+        client.close(1001, 'Server shutting down');
+      }
+    }
+
+    activeSocket = null;
+  };
+
+  return { server, sessionToken, close };
 }
 

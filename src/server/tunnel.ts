@@ -10,6 +10,7 @@ const DEV_TUNNEL_NOT_FOUND_MESSAGE =
 export interface TunnelOptions {
   port: number;
   tunnelId?: string;
+  allowAnonymous?: boolean;
 }
 
 export interface TunnelResult {
@@ -27,7 +28,7 @@ export async function startTunnel(options: TunnelOptions): Promise<TunnelResult>
 
   args.push('-p', String(port));
 
-  if (!tunnelId) {
+  if (options.allowAnonymous) {
     args.push('--allow-anonymous');
   }
 

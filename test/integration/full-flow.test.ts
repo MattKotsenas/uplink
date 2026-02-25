@@ -33,15 +33,18 @@ const COPILOT_ARGS =
 
 let server: Server;
 let port: number;
+let sessionToken: string;
 const sockets: WebSocket[] = [];
 let nextJsonRpcId = 1;
 
 beforeAll(async () => {
-  server = startServer({
+  const result = startServer({
     port: 0,
     copilotCommand: COPILOT_COMMAND,
     copilotArgs: COPILOT_ARGS,
   });
+  server = result.server;
+  sessionToken = result.sessionToken;
 
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', () => {
@@ -67,7 +70,7 @@ afterEach(async () => {
 });
 
 function wsUrl(): string {
-  return `ws://127.0.0.1:${port}/ws`;
+  return `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(sessionToken)}`;
 }
 
 function connectWS(): Promise<WebSocket> {

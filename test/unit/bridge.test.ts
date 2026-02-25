@@ -246,10 +246,11 @@ describe('Bridge class', () => {
 describe('Server integration', () => {
   let server: Server;
   let port: number;
+  let sessionToken: string;
   const sockets: WebSocket[] = [];
 
   function wsUrl() {
-    return `ws://127.0.0.1:${port}/ws`;
+    return `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(sessionToken)}`;
   }
 
   function connectWs(): Promise<WebSocket> {
@@ -262,11 +263,13 @@ describe('Server integration', () => {
   }
 
   beforeEach(async () => {
-    server = startServer({
+    const result = startServer({
       port: 0,
       copilotCommand: 'node',
       copilotArgs: ['-e', echoScript],
     });
+    server = result.server;
+    sessionToken = result.sessionToken;
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => resolve());
@@ -345,11 +348,13 @@ describe('Server integration', () => {
     // Use a script that exits quickly
     server.close();
 
-    server = startServer({
+    const result = startServer({
       port: 0,
       copilotCommand: 'node',
       copilotArgs: ['-e', 'setTimeout(() => process.exit(0), 100);'],
     });
+    server = result.server;
+    sessionToken = result.sessionToken;
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => resolve());

@@ -1,10 +1,20 @@
 #!/usr/bin/env node
 
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../src/server/index.js';
 import { startTunnel, stopTunnel, type TunnelResult } from '../src/server/tunnel.js';
+
+const require = createRequire(import.meta.url);
+const qrcode: {
+  generate: (
+    text: string,
+    options?: { small?: boolean },
+    callback?: (qrcode: string) => void,
+  ) => void;
+} = require('qrcode-terminal');
 
 const args = process.argv.slice(2);
 
@@ -22,6 +32,7 @@ const port = parseInt(getArg('port') ?? '3000', 10);
 const tunnelId = getArg('tunnel-id');
 const useTunnel = hasFlag('tunnel') || !!tunnelId;
 const noTunnel = hasFlag('no-tunnel');
+const allowAnonymous = hasFlag('allow-anonymous');
 const cwd = getArg('cwd') ?? process.cwd();
 
 if (hasFlag('help')) {
@@ -35,6 +46,7 @@ Options:
   --tunnel            Start a devtunnel for remote access
   --no-tunnel         Don't start a devtunnel
   --tunnel-id <name>  Use a persistent devtunnel
+  --allow-anonymous   Allow anonymous tunnel access (no GitHub auth)
   --cwd <path>        Working directory for Copilot
   --help              Show this help
 `);
@@ -47,7 +59,7 @@ function resolveStaticDir(): string {
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 }
 
-async function listen(server: ReturnType<typeof startServer>, desiredPort: number) {
+async function listen(server: ReturnType<typeof startServer>['server'], desiredPort: number) {
   await new Promise<void>((resolvePromise, rejectPromise) => {
     const handleError = (error: Error) => {
       server.off('error', handleError);
@@ -68,7 +80,7 @@ async function main() {
 
   const staticDir = resolveStaticDir();
 
-  const server = startServer({
+  const { server, close } = startServer({
     port,
     staticDir,
     cwd: resolve(cwd),
@@ -87,12 +99,18 @@ async function main() {
 
   let tunnel: TunnelResult | null = null;
   if (useTunnel && !noTunnel) {
+    if (allowAnonymous) {
+      console.warn('⚠️  WARNING: Anonymous tunnel access enabled!');
+      console.warn('   Anyone with the URL can control your Copilot session.');
+    }
     try {
-      tunnel = await startTunnel({ port: actualPort, tunnelId });
+      tunnel = await startTunnel({ port: actualPort, tunnelId, allowAnonymous });
       console.log(`  Tunnel: ${tunnel.url}`);
       console.log();
       console.log('  Scan QR code on your phone to connect:');
-      // TODO: generate QR code with qrcode-terminal
+      qrcode.generate(tunnel.url, { small: true }, (code) => {
+        console.log(code);
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`  Tunnel failed: ${message}`);
@@ -110,6 +128,7 @@ async function main() {
 
     console.log('\nShutting down...');
     if (tunnel) stopTunnel(tunnel);
+    close();
 
     server.close((err) => {
       if (err) {

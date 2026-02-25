@@ -36,24 +36,32 @@ planUI.attach();
 
 // Determine WS URL (same origin)
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = `${wsProtocol}//${location.host}/ws`;
 
-const client = new AcpClient({
-  wsUrl,
-  cwd: '.',
-  onStateChange: (state) => updateConnectionStatus(state),
-  onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
-  onPermissionRequest: (request, respond) => {
-    permissionUI.showPermissionRequest(
-      request.id,
-      request.toolCall.toolCallId,
-      request.toolCall.title ?? 'Unknown action',
-      request.options,
-      respond,
-    );
-  },
-  onError: (error) => console.error('ACP error:', error),
-});
+// Fetch session token and connect
+async function initializeClient() {
+  const tokenResponse = await fetch('/api/token');
+  const { token } = await tokenResponse.json();
+  const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
+
+  const client = new AcpClient({
+    wsUrl,
+    cwd: '.',
+    onStateChange: (state) => updateConnectionStatus(state),
+    onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
+    onPermissionRequest: (request, respond) => {
+      permissionUI.showPermissionRequest(
+        request.id,
+        request.toolCall.toolCallId,
+        request.toolCall.title ?? 'Unknown action',
+        request.options,
+        respond,
+      );
+    },
+    onError: (error) => console.error('ACP error:', error),
+  });
+
+  return client;
+}
 
 // Connection status UI
 function updateConnectionStatus(state: ConnectionState): void {
@@ -78,9 +86,11 @@ const promptInput = document.getElementById('prompt-input') as HTMLTextAreaEleme
 const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
 
+let client: AcpClient | null = null;
+
 sendBtn.addEventListener('click', async () => {
   const text = promptInput.value.trim();
-  if (!text) return;
+  if (!text || !client) return;
 
   conversation.addUserMessage(text);
   promptInput.value = '';
@@ -94,7 +104,7 @@ sendBtn.addEventListener('click', async () => {
 });
 
 cancelBtn.addEventListener('click', () => {
-  client.cancel();
+  client?.cancel();
   permissionUI.cancelAll();
 });
 
@@ -113,4 +123,9 @@ promptInput.addEventListener('input', () => {
 });
 
 // Connect!
-client.connect();
+initializeClient().then((c) => {
+  client = c;
+  client.connect();
+}).catch((err) => {
+  console.error('Failed to initialize client:', err);
+});
