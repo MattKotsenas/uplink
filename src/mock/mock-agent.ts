@@ -28,6 +28,14 @@ const pendingPermissions = new Map<
   (outcome: PermissionOutcome) => void
 >();
 
+type PendingTimeout = {
+  timer: NodeJS.Timeout;
+  flush: () => void;
+};
+
+const pendingTimeouts = new Set<PendingTimeout>();
+let currentPromptId: number | string | null = null;
+
 // ─── I/O ──────────────────────────────────────────────────────────────
 
 function send(msg: object): void {
@@ -56,23 +64,76 @@ function sendChunk(text: string): void {
   });
 }
 
+function isPromptActive(requestId: number | string): boolean {
+  return currentPromptId === requestId;
+}
+
+function resetPromptState(): void {
+  currentPromptId = null;
+}
+
+function respondToPrompt(
+  requestId: number | string,
+  result: SessionPromptResult,
+): void {
+  if (!isPromptActive(requestId)) return;
+  sendResponse(requestId, result);
+  resetPromptState();
+}
+
+function sendPromptUpdate(
+  requestId: number | string,
+  update: SessionUpdate,
+): void {
+  if (!isPromptActive(requestId)) return;
+  sendSessionUpdate(update);
+}
+
+function sendPromptChunk(requestId: number | string, text: string): void {
+  if (!isPromptActive(requestId)) return;
+  sendChunk(text);
+}
+
+function clearPendingTimeouts(): void {
+  for (const entry of pendingTimeouts) {
+    clearTimeout(entry.timer);
+    entry.flush();
+  }
+  pendingTimeouts.clear();
+}
+
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    const entry: PendingTimeout = {
+      timer: setTimeout(() => {
+        pendingTimeouts.delete(entry);
+        resolve();
+      }, ms),
+      flush: () => {
+        pendingTimeouts.delete(entry);
+        resolve();
+      },
+    };
+    pendingTimeouts.add(entry);
+  });
 }
 
 // ─── Scenarios ────────────────────────────────────────────────────────
 
 async function scenarioSimpleText(requestId: number | string): Promise<void> {
-  sendChunk("Hello ");
+  sendPromptChunk(requestId, "Hello ");
   await delay(50);
-  sendChunk("from ");
+  sendPromptChunk(requestId, "from ");
   await delay(50);
-  sendChunk("mock agent!");
-  sendResponse(requestId, { stopReason: "end_turn" } satisfies SessionPromptResult);
+  sendPromptChunk(requestId, "mock agent!");
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
 }
 
 async function scenarioToolCall(requestId: number | string): Promise<void> {
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call",
     toolCallId: "tc1",
     title: "Reading file",
@@ -80,13 +141,13 @@ async function scenarioToolCall(requestId: number | string): Promise<void> {
     status: "pending",
   });
   await delay(50);
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call_update",
     toolCallId: "tc1",
     status: "in_progress",
   });
   await delay(50);
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call_update",
     toolCallId: "tc1",
     status: "completed",
@@ -94,12 +155,15 @@ async function scenarioToolCall(requestId: number | string): Promise<void> {
       { type: "content", content: { type: "text", text: "File contents here" } },
     ],
   });
-  sendChunk("Tool completed successfully.");
-  sendResponse(requestId, { stopReason: "end_turn" } satisfies SessionPromptResult);
+  sendPromptChunk(requestId, "Tool completed successfully.");
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
 }
 
 async function scenarioPermission(requestId: number | string): Promise<void> {
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call",
     toolCallId: "tc2",
     title: "Writing file",
@@ -128,7 +192,7 @@ async function scenarioPermission(requestId: number | string): Promise<void> {
   });
 
   if (outcome.outcome === "selected" && outcome.optionId === "allow") {
-    sendSessionUpdate({
+    sendPromptUpdate(requestId, {
       sessionUpdate: "tool_call_update",
       toolCallId: "tc2",
       status: "completed",
@@ -136,17 +200,20 @@ async function scenarioPermission(requestId: number | string): Promise<void> {
         { type: "content", content: { type: "text", text: "File written." } },
       ],
     });
-    sendChunk("Permission granted, file written.");
+    sendPromptChunk(requestId, "Permission granted, file written.");
   } else {
-    sendSessionUpdate({
+    sendPromptUpdate(requestId, {
       sessionUpdate: "tool_call_update",
       toolCallId: "tc2",
       status: "failed",
     });
-    sendChunk("Permission denied.");
+    sendPromptChunk(requestId, "Permission denied.");
   }
 
-  sendResponse(requestId, { stopReason: "end_turn" } satisfies SessionPromptResult);
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
 }
 
 async function scenarioMultiChunkStream(
@@ -159,10 +226,13 @@ async function scenarioMultiChunkStream(
     "twenty ", "words ", "sent ", "one ", "at-a-time. ",
   ];
   for (const word of words) {
-    sendChunk(word);
+    sendPromptChunk(requestId, word);
     await delay(10);
   }
-  sendResponse(requestId, { stopReason: "end_turn" } satisfies SessionPromptResult);
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
 }
 
 async function scenarioPlanThenExecute(
@@ -174,9 +244,9 @@ async function scenarioPlanThenExecute(
     { content: "Verify results", priority: "medium", status: "pending" },
   ];
 
-  sendSessionUpdate({ sessionUpdate: "plan", entries: [...entries] });
+  sendPromptUpdate(requestId, { sessionUpdate: "plan", entries: [...entries] });
 
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call",
     toolCallId: "plan-tc1",
     title: "Read configuration",
@@ -187,9 +257,9 @@ async function scenarioPlanThenExecute(
 
   entries[0].status = "completed";
   entries[1].status = "in_progress";
-  sendSessionUpdate({ sessionUpdate: "plan", entries: [...entries] });
+  sendPromptUpdate(requestId, { sessionUpdate: "plan", entries: [...entries] });
 
-  sendSessionUpdate({
+  sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call_update",
     toolCallId: "plan-tc1",
     status: "completed",
@@ -198,13 +268,19 @@ async function scenarioPlanThenExecute(
     ],
   });
 
-  sendChunk("Plan execution complete.");
-  sendResponse(requestId, { stopReason: "end_turn" } satisfies SessionPromptResult);
+  sendPromptChunk(requestId, "Plan execution complete.");
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
 }
 
 function scenarioRefusal(requestId: number | string): void {
-  sendChunk("I cannot do that.");
-  sendResponse(requestId, { stopReason: "refusal" } satisfies SessionPromptResult);
+  sendPromptChunk(requestId, "I cannot do that.");
+  respondToPrompt(
+    requestId,
+    { stopReason: "refusal" } satisfies SessionPromptResult,
+  );
 }
 
 // ─── Message Router ───────────────────────────────────────────────────
@@ -215,6 +291,8 @@ function extractPromptText(params: SessionPromptParams): string {
   );
   return textBlock?.text.trim().toLowerCase() ?? "";
 }
+
+type JsonRpcNotification = Omit<JsonRpcRequest, "id">;
 
 async function handleRequest(msg: JsonRpcRequest): Promise<void> {
   switch (msg.method) {
@@ -234,6 +312,7 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
       break;
     }
     case "session/prompt": {
+      currentPromptId = msg.id;
       const params = msg.params as SessionPromptParams;
       const text = extractPromptText(params);
 
@@ -286,6 +365,29 @@ function handleResponse(msg: JsonRpcResponse): void {
   }
 }
 
+function handleNotification(msg: JsonRpcNotification): void {
+  switch (msg.method) {
+    case "session/cancel":
+      handleSessionCancel();
+      break;
+    default:
+      break;
+  }
+}
+
+function handleSessionCancel(): void {
+  clearPendingTimeouts();
+  if (currentPromptId == null) {
+    return;
+  }
+
+  const promptId = currentPromptId;
+  sendResponse(promptId, {
+    stopReason: "cancelled",
+  } satisfies SessionPromptResult);
+  resetPromptState();
+}
+
 function handleLine(line: string): void {
   if (!line.trim()) return;
 
@@ -305,8 +407,9 @@ function handleLine(line: string): void {
     handleResponse(msg as JsonRpcResponse);
   } else if ("id" in msg) {
     handleRequest(msg as JsonRpcRequest);
+  } else if ("method" in msg) {
+    handleNotification(msg as JsonRpcNotification);
   }
-  // Notifications without id are silently accepted
 }
 
 // ─── Self-Test ────────────────────────────────────────────────────────
