@@ -1,6 +1,8 @@
 import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
 import { ChatUI } from './ui/chat.js';
+import { PermissionUI } from './ui/permission.js';
+import { ToolCallUI } from './ui/tool-call.js';
 
 // Register service worker for PWA
 if ('serviceWorker' in navigator) {
@@ -12,11 +14,21 @@ if ('serviceWorker' in navigator) {
 // Create instances
 const conversation = new Conversation();
 
+const chatArea = document.getElementById('chat-area')!;
+
 const chatUI = new ChatUI(
-  document.getElementById('chat-area')!,
+  chatArea,
   conversation,
 );
 chatUI.attach();
+
+const permissionUI = new PermissionUI(chatArea, conversation);
+
+const toolCallUI = new ToolCallUI(
+  document.getElementById('chat-area')!,
+  conversation,
+);
+toolCallUI.attach();
 
 // Determine WS URL (same origin)
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -28,9 +40,13 @@ const client = new AcpClient({
   onStateChange: (state) => updateConnectionStatus(state),
   onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
   onPermissionRequest: (request, respond) => {
-    // TODO: wire to permission UI
-    console.log('Permission requested:', request);
-    void respond;
+    permissionUI.showPermissionRequest(
+      request.id,
+      request.toolCall.toolCallId,
+      request.toolCall.title ?? 'Unknown action',
+      request.options,
+      respond,
+    );
   },
   onError: (error) => console.error('ACP error:', error),
 });
@@ -75,6 +91,7 @@ sendBtn.addEventListener('click', async () => {
 
 cancelBtn.addEventListener('click', () => {
   client.cancel();
+  permissionUI.cancelAll();
 });
 
 // Enter to send (Shift+Enter for newline)
