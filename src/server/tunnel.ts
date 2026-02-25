@@ -3,6 +3,7 @@ import { ChildProcess, spawn } from 'node:child_process';
 const URL_REGEX = /(https:\/\/[^\s,]+devtunnels\.ms[^\s,]*)/i;
 const BUFFER_LIMIT = 4096;
 const URL_TIMEOUT_MS = 30_000;
+const FORCE_KILL_DELAY_MS = 5_000;
 const DEV_TUNNEL_NOT_FOUND_MESSAGE =
   'devtunnel CLI not found. Install: winget install Microsoft.devtunnel';
 
@@ -157,17 +158,43 @@ export async function startTunnel(options: TunnelOptions): Promise<TunnelResult>
 export function stopTunnel(tunnel: TunnelResult): void {
   const proc = tunnel.process;
 
-  if (proc.killed) {
+  if (proc.killed || proc.exitCode !== null) {
     return;
   }
+
+  const forceKill = (): void => {
+    try {
+      if (!proc.kill('SIGKILL')) {
+        proc.kill();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  let timeout: NodeJS.Timeout | undefined;
 
   try {
     const graceful = proc.kill('SIGINT');
 
     if (!graceful) {
-      proc.kill();
+      forceKill();
+      return;
     }
   } catch {
-    // ignore
+    forceKill();
+    return;
   }
+
+  timeout = setTimeout(() => {
+    if (!proc.killed && proc.exitCode === null) {
+      forceKill();
+    }
+  }, FORCE_KILL_DELAY_MS);
+
+  proc.once('exit', () => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
 }
