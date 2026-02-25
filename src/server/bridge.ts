@@ -5,6 +5,7 @@ export interface BridgeOptions {
   command: string;      // e.g., "copilot" or "npx tsx src/mock/mock-agent.ts"
   args: string[];       // e.g., ["--acp", "--stdio"]
   cwd?: string;         // working directory for the subprocess
+  env?: Record<string, string | undefined>;  // environment variables for the subprocess
 }
 
 export class Bridge {
@@ -23,6 +24,7 @@ export class Bridge {
     // Spawn the child process
     this.child = spawn(this.options.command, this.options.args, {
       cwd: this.options.cwd,
+      env: this.options.env ? { ...process.env, ...this.options.env } : undefined,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

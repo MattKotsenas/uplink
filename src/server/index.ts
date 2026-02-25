@@ -1,9 +1,11 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { readdirSync, existsSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
+import { homedir } from 'node:os';
 
 export interface ServerOptions {
   port: number;                    // default 3000
@@ -17,6 +19,38 @@ export interface ServerResult {
   server: ReturnType<typeof createServer>;
   sessionToken: string;
   close: () => void;
+}
+
+/**
+ * Discover plugin skills directories so copilot in ACP mode can find them.
+ * Copilot CLI doesn't load installed-plugin skills in --acp mode unless
+ * COPILOT_SKILLS_DIRS is set.
+ */
+function discoverPluginSkillsDirs(): string | undefined {
+  const pluginsRoot = path.join(
+    process.env.XDG_CONFIG_HOME ?? homedir(),
+    process.env.XDG_CONFIG_HOME ? 'installed-plugins' : '.copilot/installed-plugins',
+  );
+
+  if (!existsSync(pluginsRoot)) return undefined;
+
+  const dirs: string[] = [];
+  try {
+    // Walk two levels: marketplace/plugin/skills or _direct/plugin/skills
+    for (const marketplace of readdirSync(pluginsRoot, { withFileTypes: true })) {
+      if (!marketplace.isDirectory()) continue;
+      const mpPath = path.join(pluginsRoot, marketplace.name);
+      for (const plugin of readdirSync(mpPath, { withFileTypes: true })) {
+        if (!plugin.isDirectory()) continue;
+        const skillsDir = path.join(mpPath, plugin.name, 'skills');
+        if (existsSync(skillsDir)) dirs.push(skillsDir);
+      }
+    }
+  } catch {
+    // ignore permission errors
+  }
+
+  return dirs.length > 0 ? dirs.join(',') : undefined;
 }
 
 export function startServer(options: ServerOptions): ServerResult {
@@ -87,10 +121,18 @@ export function startServer(options: ServerOptions): ServerResult {
       args = options.copilotArgs ?? ['--acp', '--stdio'];
     }
 
+    // Discover plugin skills for copilot ACP mode
+    const bridgeEnv: Record<string, string | undefined> = {};
+    const skillsDirs = process.env.COPILOT_SKILLS_DIRS ?? discoverPluginSkillsDirs();
+    if (skillsDirs) {
+      bridgeEnv.COPILOT_SKILLS_DIRS = skillsDirs;
+    }
+
     const bridgeOptions: BridgeOptions = {
       command,
       args,
       cwd: resolvedCwd,
+      env: Object.keys(bridgeEnv).length > 0 ? bridgeEnv : undefined,
     };
 
     console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
