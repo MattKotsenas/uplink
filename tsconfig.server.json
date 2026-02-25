@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "Node16",
-    "moduleResolution": "Node16"
+    "moduleResolution": "Node16",
+    "rootDir": "."
   },
   "include": ["src/server/**/*", "src/shared/**/*", "src/mock/**/*", "bin/**/*"]
 }
