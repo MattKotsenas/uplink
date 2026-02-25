@@ -51,18 +51,17 @@ export function startServer(options: ServerOptions) {
     activeSocket = ws;
 
     // Determine command and args
-    let command = options.copilotCommand || 'copilot';
-    let args = options.copilotArgs || ['--acp', '--stdio'];
+    let command: string;
+    let args: string[];
 
-    // If copilotCommand option was NOT provided, allow env var override
-    if (!options.copilotCommand && process.env.COPILOT_COMMAND) {
-      const parts = process.env.COPILOT_COMMAND.split(' ');
-      if (parts.length > 0) {
-        command = parts[0];
-        // Append default args (e.g. --acp --stdio) to any args from env var
-        const envArgs = parts.slice(1);
-        args = [...envArgs, ...args];
-      }
+    const envCommand = !options.copilotCommand ? process.env.COPILOT_COMMAND : undefined;
+    if (envCommand) {
+      const parts = envCommand.split(' ');
+      command = parts[0];
+      args = parts.slice(1);
+    } else {
+      command = options.copilotCommand ?? 'copilot';
+      args = options.copilotArgs ?? ['--acp', '--stdio'];
     }
 
     const bridgeOptions: BridgeOptions = {

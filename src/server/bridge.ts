@@ -24,7 +24,6 @@ export class Bridge {
     this.child = spawn(this.options.command, this.options.args, {
       cwd: this.options.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true, 
     });
 
     if (!this.child.stdout || !this.child.stdin) {
