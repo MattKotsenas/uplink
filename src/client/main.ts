@@ -25,7 +25,7 @@ chatUI.attach();
 const permissionUI = new PermissionUI(chatArea, conversation);
 
 const toolCallUI = new ToolCallUI(
-  document.getElementById('chat-area')!,
+  chatArea,
   conversation,
 );
 toolCallUI.attach();

@@ -43,6 +43,8 @@ type StartCallbacks = {
   onError?: (error: Error) => void;
 };
 
+export type PermissionRequestContext = PermissionRequestParams & { id: number };
+
 export type ConnectionState =
   | "disconnected"
   | "connecting"
@@ -56,7 +58,7 @@ export interface AcpClientOptions {
   onStateChange?: (state: ConnectionState) => void;
   onSessionUpdate?: (update: SessionUpdate) => void;
   onPermissionRequest?: (
-    request: PermissionRequestParams,
+    request: PermissionRequestContext,
     respond: (outcome: PermissionOutcome) => void,
   ) => void;
   onError?: (error: Error) => void;
@@ -338,7 +340,7 @@ export class AcpClient {
     const params = message.params as PermissionRequestParams | undefined;
     const respond = this.createPermissionResponder(message.id);
 
-    if (!params) {
+    if (!params || typeof message.id !== "number") {
       respond({ outcome: "cancelled" });
       return;
     }
@@ -354,7 +356,8 @@ export class AcpClient {
       };
 
       try {
-        this.options.onPermissionRequest(params, once);
+        const request: PermissionRequestContext = { ...params, id: message.id };
+        this.options.onPermissionRequest(request, once);
         return;
       } catch (error) {
         console.error("Error in onPermissionRequest callback:", error);
