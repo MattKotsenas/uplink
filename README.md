@@ -20,28 +20,21 @@ serves a Progressive Web App that renders streaming responses, tool calls,
 permissions, and agent plans. Add a Microsoft Dev Tunnel and the whole thing
 is reachable from anywhere.
 
-```
-┌─────────────┐     HTTPS/WSS      ┌──────────────────┐     stdio/NDJSON     ┌─────────────────┐
-│  PWA Client │ ←────────────────→  │   Bridge Server  │ ←─────────────────→  │ copilot --acp   │
-│  (browser)  │    via devtunnel    │   (Node.js)      │   child process      │ --stdio          │
-└─────────────┘                     └──────────────────┘                      └─────────────────┘
-                                           │
-                                    Serves PWA static
-                                    files + WebSocket
-                                    endpoint
+```mermaid
+graph LR
+    PWA["PWA Client<br/>(browser)"] <-->|"HTTPS / WSS<br/>via devtunnel"| Bridge["Bridge Server<br/>(Node.js)"]
+    Bridge <-->|"stdio / NDJSON<br/>child process"| Copilot["copilot --acp<br/>--stdio"]
+    Bridge -.-|"Serves PWA static files<br/>+ WebSocket endpoint"| PWA
 ```
 
 ## Quick Start
 
 ```bash
-# Install globally
-npm install -g copilot-uplink
-
-# Start locally (opens on http://localhost:3000)
-copilot-uplink
+# Run directly (no install required)
+npx copilot-uplink
 
 # Start with remote access via devtunnel
-copilot-uplink --tunnel
+npx copilot-uplink --tunnel
 ```
 
 ## How It Works
@@ -59,31 +52,34 @@ copilot-uplink --tunnel
 
 ### Message Flow
 
-```
-PWA                          Bridge                       Copilot (stdio)
- │                              │                              │
- │──WS connect──────────────────│                              │
- │                              │──spawn copilot --acp --stdio─│
- │                              │                              │
- │──WS: {"method":"initialize"} │                              │
- │                              │──stdin: {"method":"initialize"}\n
- │                              │                              │
- │                              │  stdout: {"result":{...}}\n──│
- │  WS: {"result":{...}}───────│                              │
- │                              │                              │
- │──WS: {"method":"session/prompt"}                            │
- │                              │──stdin: {"method":"session/prompt"}\n
- │                              │                              │
- │                              │  stdout: session/update (chunks)\n
- │  WS: session/update─────────│  ...streaming...             │
- │                              │                              │
- │                              │  stdout: session/request_permission\n
- │  WS: request_permission──────│                              │
- │──WS: permission response─────│                              │
- │                              │──stdin: permission response\n─│
- │                              │                              │
- │                              │  stdout: {"result":{...}}\n──│
- │  WS: prompt result──────────│                              │
+```mermaid
+sequenceDiagram
+    participant PWA
+    participant Bridge
+    participant Copilot as Copilot (stdio)
+
+    PWA->>Bridge: WS connect
+    Bridge->>Copilot: spawn copilot --acp --stdio
+
+    PWA->>Bridge: WS: initialize
+    Bridge->>Copilot: stdin: initialize\n
+    Copilot->>Bridge: stdout: result\n
+    Bridge->>PWA: WS: result
+
+    PWA->>Bridge: WS: session/prompt
+    Bridge->>Copilot: stdin: session/prompt\n
+    loop Streaming
+        Copilot->>Bridge: stdout: session/update\n
+        Bridge->>PWA: WS: session/update
+    end
+
+    Copilot->>Bridge: stdout: request_permission\n
+    Bridge->>PWA: WS: request_permission
+    PWA->>Bridge: WS: permission response
+    Bridge->>Copilot: stdin: permission response\n
+
+    Copilot->>Bridge: stdout: result\n
+    Bridge->>PWA: WS: prompt result
 ```
 
 ## Features
@@ -101,7 +97,7 @@ PWA                          Bridge                       Copilot (stdio)
 
 1. **Start with tunnel:**
    ```bash
-   copilot-uplink --tunnel
+   npx copilot-uplink --tunnel
    ```
 2. **Scan the QR code** printed in your terminal with your phone's camera.
 3. **Add to Home Screen** — your browser will offer an "Install" or
@@ -115,7 +111,7 @@ PWA                          Bridge                       Copilot (stdio)
    devtunnel port create my-uplink -p 3000
 
    # Reuse every time
-   copilot-uplink --tunnel-id my-uplink
+   npx copilot-uplink --tunnel-id my-uplink
    ```
 
 With a persistent tunnel the installed PWA always connects to the same URL.
@@ -125,7 +121,7 @@ a reconnection banner and retries automatically.
 ## CLI Reference
 
 ```
-copilot-uplink [options]
+npx copilot-uplink [options]
 ```
 
 | Flag | Description | Default |
@@ -274,4 +270,4 @@ real Copilot CLI.
 
 ## License
 
-MIT
+[MIT](LICENSE)
