@@ -84,3 +84,34 @@ scenarios selected by prompt content:
 
 Use these scenarios during development to exercise every UI path without a
 real Copilot CLI.
+
+## Releasing
+
+Releases are published to npm automatically via GitHub Actions using
+[trusted publishing](https://docs.npmjs.com/trusted-publishers) (no npm
+tokens needed).
+
+1. **Update the version** in `package.json`:
+   ```bash
+   npm version patch   # or minor / major
+   ```
+2. **Push the commit and tag:**
+   ```bash
+   git push && git push --tags
+   ```
+3. **Create a GitHub Release** from the tag — go to
+   [Releases](https://github.com/MattKotsenas/uplink/releases) → **Draft a
+   new release** → select the tag → add release notes → **Publish release**.
+4. The `publish.yml` workflow runs automatically: build → test → `npm publish`.
+
+To verify: check the
+[Actions tab](https://github.com/MattKotsenas/uplink/actions/workflows/publish.yml)
+and [npm package page](https://www.npmjs.com/package/@mattkotsenas/uplink).
+
+### Testing a package locally before release
+
+```bash
+npm pack
+npm install -g ./mattkotsenas-uplink-<version>.tgz
+uplink --help
+```
