@@ -34,6 +34,21 @@ npm run dev
 Vite serves the PWA with hot-reload; changes to `src/client/` are reflected
 instantly.
 
+### Running against a different working directory
+
+The dev server uses Vite, which doesn't support `--cwd`. To test against a
+specific project directory, build first and run the CLI directly:
+
+```bash
+npm run build && node dist/bin/cli.js --cwd /path/to/your/project
+```
+
+Or skip the build step with `tsx`:
+
+```bash
+npx tsx bin/cli.ts --cwd /path/to/your/project
+```
+
 ## Build
 
 ```bash
