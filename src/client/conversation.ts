@@ -38,6 +38,12 @@ export interface TrackedPlan {
   entries: PlanEntry[];
 }
 
+export type TimelineEntry =
+  | { type: "message"; index: number }
+  | { type: "toolCall"; toolCallId: string }
+  | { type: "permission"; requestId: number }
+  | { type: "plan" };
+
 // ─── Conversation State ───────────────────────────────────────────────
 
 export class Conversation {
@@ -45,6 +51,7 @@ export class Conversation {
   toolCalls: Map<string, TrackedToolCall> = new Map();
   permissions: TrackedPermission[] = [];
   plan: TrackedPlan | null = null;
+  timeline: TimelineEntry[] = [];
   isPrompting = false;
 
   private listeners: Set<() => void> = new Set();
@@ -67,6 +74,7 @@ export class Conversation {
 
   addUserMessage(text: string): void {
     this.messages.push({ role: "user", content: text, timestamp: Date.now() });
+    this.timeline.push({ type: "message", index: this.messages.length - 1 });
     this.notify();
   }
 
@@ -95,6 +103,7 @@ export class Conversation {
           content: update.content ?? [],
           locations: update.locations ?? [],
         });
+        this.timeline.push({ type: "toolCall", toolCallId: update.toolCallId });
         break;
 
       case "tool_call_update": {
@@ -112,9 +121,14 @@ export class Conversation {
         break;
       }
 
-      case "plan":
+      case "plan": {
         this.plan = { entries: update.entries };
+        // Only add plan entry once
+        if (!this.timeline.some((e) => e.type === "plan")) {
+          this.timeline.push({ type: "plan" });
+        }
         break;
+      }
     }
 
     this.notify();
@@ -135,6 +149,7 @@ export class Conversation {
       options,
       resolved: false,
     });
+    this.timeline.push({ type: "permission", requestId });
     this.notify();
   }
 
@@ -171,6 +186,7 @@ export class Conversation {
     this.toolCalls.clear();
     this.permissions = [];
     this.plan = null;
+    this.timeline = [];
     this.notify();
   }
 
@@ -181,8 +197,8 @@ export class Conversation {
     if (last?.role === "agent") {
       last.content += text;
     } else if (text) {
-      // Only create a new message if there's actual content
       this.messages.push({ role: "agent", content: text, timestamp: Date.now() });
+      this.timeline.push({ type: "message", index: this.messages.length - 1 });
     }
   }
 
@@ -192,6 +208,7 @@ export class Conversation {
       last.content += text;
     } else if (text) {
       this.messages.push({ role: "user", content: text, timestamp: Date.now() });
+      this.timeline.push({ type: "message", index: this.messages.length - 1 });
     }
   }
 }

@@ -163,6 +163,30 @@ test('thinking/reasoning display', async ({ page }) => {
   await expect(thinking).toContainText('analyzed the problem', { timeout: 5000 });
 });
 
+test('tool calls render inline between messages in timeline order', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Send a message that triggers tool calls (which appear between user and agent messages)
+  const input = page.locator('#prompt-input');
+  await input.fill('tool');
+  await page.locator('#send-btn').click();
+
+  // Wait for tool call and agent response
+  const toolCall = page.locator('.tool-call').first();
+  await expect(toolCall).toBeVisible({ timeout: 10000 });
+  const agentMsg = page.locator('.message.agent').first();
+  await expect(agentMsg).toBeVisible({ timeout: 10000 });
+
+  // Verify DOM order: user message → tool call → agent message
+  const userMsgBox = await page.locator('.message.user').first().boundingBox();
+  const toolCallBox = await toolCall.boundingBox();
+  const agentMsgBox = await agentMsg.boundingBox();
+
+  expect(toolCallBox!.y).toBeGreaterThan(userMsgBox!.y);
+  expect(agentMsgBox!.y).toBeGreaterThan(toolCallBox!.y);
+});
+
 test('permission buttons have readable contrast in dark mode', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });

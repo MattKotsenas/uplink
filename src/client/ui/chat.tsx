@@ -1,7 +1,10 @@
 import { h } from 'preact';
-import type { ComponentChildren } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Conversation, ConversationMessage } from '../conversation.js';
+import type { TimelineEntry } from '../conversation.js';
+import { ToolCallCard } from './tool-call.js';
+import { PermissionCard, activeRequests } from './permission.js';
+import { PlanCard } from './plan.js';
 import hljs from 'highlight.js/lib/core';
 import typescript from 'highlight.js/lib/languages/typescript';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -99,17 +102,47 @@ function ChatMessage({ msg }: { msg: ConversationMessage }) {
 }
 
 /**
- * Renders the conversation message list.
+ * Renders a single timeline entry (message, tool call, permission, or plan).
+ */
+function TimelineItem({
+  entry,
+  conversation,
+}: {
+  entry: TimelineEntry;
+  conversation: Conversation;
+}) {
+  switch (entry.type) {
+    case 'message': {
+      const msg = conversation.messages[entry.index];
+      return msg ? <ChatMessage msg={msg} /> : null;
+    }
+    case 'toolCall': {
+      const tc = conversation.toolCalls.get(entry.toolCallId);
+      return tc ? <ToolCallCard tc={tc} /> : null;
+    }
+    case 'permission': {
+      const req = activeRequests.value.find(
+        (r) => r.requestId === entry.requestId,
+      );
+      return req ? (
+        <PermissionCard req={req} conversation={conversation} />
+      ) : null;
+    }
+    case 'plan':
+      return <PlanCard conversation={conversation} />;
+  }
+}
+
+/**
+ * Renders the conversation timeline.
  * Subscribes to Conversation.onChange() to re-render on new messages/streaming.
  */
 export function ChatList({
   conversation,
   scrollContainer,
-  children,
 }: {
   conversation: Conversation;
   scrollContainer: HTMLElement;
-  children?: preact.ComponentChildren;
 }) {
   const [, setVersion] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,10 +163,9 @@ export function ChatList({
 
   return (
     <>
-      {conversation.messages.map((msg, i) => (
-        <ChatMessage key={i} msg={msg} />
+      {conversation.timeline.map((entry, i) => (
+        <TimelineItem key={i} entry={entry} conversation={conversation} />
       ))}
-      {children}
       {showThinking && (
         <div class="message agent thinking-indicator">
           <div class="content">

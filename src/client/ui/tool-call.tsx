@@ -77,7 +77,7 @@ function ThinkingBlock({ tc }: { tc: TrackedToolCall }) {
   );
 }
 
-function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
+export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
   const [collapsed, setCollapsed] = useState(true);
 
   if (tc.kind === 'think') {

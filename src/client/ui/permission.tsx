@@ -8,7 +8,7 @@ import type {
 
 export type PermissionResponder = (outcome: PermissionOutcome) => void;
 
-interface ActiveRequest {
+export interface ActiveRequest {
   requestId: number;
   title: string;
   options: PermissionOption[];
@@ -19,7 +19,7 @@ interface ActiveRequest {
 
 // ─── Shared state ─────────────────────────────────────────────────────
 
-const activeRequests = signal<ActiveRequest[]>([]);
+export const activeRequests = signal<ActiveRequest[]>([]);
 
 // ─── Imperative API (used by main.ts) ─────────────────────────────────
 
@@ -83,7 +83,7 @@ function resolveRequest(
 
 // ─── Components ───────────────────────────────────────────────────────
 
-function PermissionCard({
+export function PermissionCard({
   req,
   conversation,
 }: {

@@ -2,9 +2,7 @@ import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
 import { ChatList, scrollChatToBottom } from './ui/chat.js';
 import { ShellOutput } from './ui/shell.js';
-import { showPermissionRequest, cancelAllPermissions, PermissionList } from './ui/permission.js';
-import { ToolCallList } from './ui/tool-call.js';
-import { PlanCard } from './ui/plan.js';
+import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js';
 import { fetchSessions, openSessionsModal, SessionsModal } from './ui/sessions.js';
 import { render, h } from 'preact';
 
@@ -131,11 +129,7 @@ chatArea.appendChild(chatContainer);
 
 function renderChat(): void {
   render(
-    h(ChatList, { conversation, scrollContainer: chatArea },
-      h(ToolCallList, { conversation }),
-      h(PermissionList, { conversation }),
-      h(PlanCard, { conversation }),
-    ),
+    h(ChatList, { conversation, scrollContainer: chatArea }),
     chatContainer,
   );
 }
