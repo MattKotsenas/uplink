@@ -275,6 +275,33 @@ async function scenarioPlanThenExecute(
   );
 }
 
+async function scenarioReasoning(requestId: number | string): Promise<void> {
+  sendPromptUpdate(requestId, {
+    sessionUpdate: "tool_call",
+    toolCallId: "think-1",
+    title: "Reasoning",
+    kind: "think",
+    status: "in_progress",
+    content: [
+      { type: "content", content: { type: "text", text: "Let me think through this step by step..." } },
+    ],
+  });
+  await delay(100);
+  sendPromptUpdate(requestId, {
+    sessionUpdate: "tool_call_update",
+    toolCallId: "think-1",
+    status: "completed",
+    content: [
+      { type: "content", content: { type: "text", text: "I've analyzed the problem. The key insight is that we need to consider both performance and readability." } },
+    ],
+  });
+  sendPromptChunk(requestId, "Based on my analysis, here's what I recommend...");
+  respondToPrompt(
+    requestId,
+    { stopReason: "end_turn" } satisfies SessionPromptResult,
+  );
+}
+
 function scenarioRefusal(requestId: number | string): void {
   sendPromptChunk(requestId, "I cannot do that.");
   respondToPrompt(
@@ -324,6 +351,8 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
         await scenarioMultiChunkStream(msg.id);
       } else if (text.startsWith("plan")) {
         await scenarioPlanThenExecute(msg.id);
+      } else if (text.startsWith("reason")) {
+        await scenarioReasoning(msg.id);
       } else if (text.startsWith("refuse")) {
         scenarioRefusal(msg.id);
       } else {

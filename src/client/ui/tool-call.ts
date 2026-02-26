@@ -46,6 +46,10 @@ export class ToolCallUI {
   }
 
   private createToolCallElement(tc: TrackedToolCall): HTMLElement {
+    if (tc.kind === 'think') {
+      return this.createThinkingElement(tc);
+    }
+
     const wrapper = document.createElement('div');
     wrapper.className = 'tool-call';
     wrapper.dataset.toolCallId = tc.toolCallId;
@@ -87,6 +91,41 @@ export class ToolCallUI {
     return wrapper;
   }
 
+  private createThinkingElement(tc: TrackedToolCall): HTMLElement {
+    const details = document.createElement('details');
+    details.className = 'tool-call tool-call-thinking';
+    details.dataset.toolCallId = tc.toolCallId;
+
+    const summary = document.createElement('summary');
+    summary.className = 'tool-call-header thinking-header';
+
+    const kindIcon = document.createElement('span');
+    kindIcon.className = 'kind-icon';
+    kindIcon.textContent = '💭';
+
+    const title = document.createElement('span');
+    title.className = 'tool-call-title';
+    title.textContent = tc.status === 'completed' ? 'Thought' : 'Thinking…';
+
+    const status = document.createElement('span');
+    status.className = `status ${tc.status}`;
+    status.textContent = tc.status;
+
+    summary.appendChild(kindIcon);
+    summary.appendChild(title);
+    summary.appendChild(status);
+    details.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'tool-call-body thinking-body';
+    if (tc.content.length > 0) {
+      body.appendChild(this.renderContent(tc.content));
+    }
+    details.appendChild(body);
+
+    return details;
+  }
+
   private updateToolCallElement(el: HTMLElement, tc: TrackedToolCall): void {
     const status = el.querySelector('.status');
     if (status) {
@@ -96,7 +135,11 @@ export class ToolCallUI {
 
     const title = el.querySelector('.tool-call-title');
     if (title) {
-      title.textContent = tc.title;
+      if (tc.kind === 'think') {
+        title.textContent = tc.status === 'completed' ? 'Thought' : 'Thinking…';
+      } else {
+        title.textContent = tc.title;
+      }
     }
 
     const body = el.querySelector('.tool-call-body') as HTMLElement | null;

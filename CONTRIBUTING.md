@@ -70,7 +70,7 @@ bridge on a random port (`:0`) to avoid conflicts.
 ### Mock Agent
 
 `src/mock/mock-agent.ts` is a standalone Node.js script that speaks ACP over
-stdio — the same interface as `copilot --acp --stdio`. It supports six
+stdio — the same interface as `copilot --acp --stdio`. It supports seven
 scenarios selected by prompt content:
 
 | Prompt contains | Scenario | Behaviour |
@@ -80,6 +80,7 @@ scenarios selected by prompt content:
 | `permission` | `permission-required` | Tool call → permission request → waits for response → continues |
 | `stream` | `multi-chunk-stream` | Many small text chunks rapidly (tests streaming / backpressure) |
 | `plan` | `plan-then-execute` | Plan update → tool calls that fulfil the plan |
+| `reason` | `reasoning` | Thinking tool call → completed → text → `end_turn` |
 | `refuse` | `error-refusal` | Responds with `stopReason: "refusal"` |
 
 Use these scenarios during development to exercise every UI path without a

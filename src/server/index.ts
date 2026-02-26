@@ -1,11 +1,13 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { exec } from 'node:child_process';
 import { readdirSync, existsSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
 import { homedir } from 'node:os';
+import { getRecentSessions } from './sessions.js';
 
 export interface ServerOptions {
   port: number;                    // default 3000
@@ -53,6 +55,46 @@ function discoverPluginSkillsDirs(): string | undefined {
   return dirs.length > 0 ? dirs.join(',') : undefined;
 }
 
+const SHELL_TIMEOUT_MS = 30_000;
+
+function handleShellCommand(
+  ws: WebSocket,
+  id: number | string | undefined,
+  command: string | undefined,
+  cwd: string,
+): void {
+  if (id === undefined || !command) {
+    if (id !== undefined) {
+      ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32602, message: 'Missing command parameter' },
+      }));
+    }
+    return;
+  }
+
+  exec(command, { cwd, timeout: SHELL_TIMEOUT_MS }, (err, stdout, stderr) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    if (err && (err as any).killed) {
+      ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -1, message: 'Command timed out' },
+      }));
+      return;
+    }
+
+    const exitCode = err ? (err.code ?? 1) : 0;
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      result: { stdout, stderr, exitCode },
+    }));
+  });
+}
+
 export function startServer(options: ServerOptions): ServerResult {
   const app = express();
   const port = options.port || 3000;
@@ -63,6 +105,18 @@ export function startServer(options: ServerOptions): ServerResult {
   // Token endpoint (must be before SPA fallback)
   app.get('/api/token', (_req, res) => {
     res.json({ token: sessionToken, cwd: resolvedCwd });
+  });
+
+  // Sessions endpoint
+  app.get('/api/sessions', async (req, res) => {
+    const cwd = req.query.cwd as string | undefined;
+    if (!cwd) {
+      res.status(400).json({ error: 'Missing required query parameter: cwd' });
+      return;
+    }
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const sessions = await getRecentSessions(cwd, limit);
+    res.json({ sessions });
   });
   
   // Serve static files if configured
@@ -172,10 +226,23 @@ export function startServer(options: ServerOptions): ServerResult {
       }
     });
 
-    // WebSocket -> Bridge
+    // WebSocket -> Bridge (with uplink-specific message interception)
     ws.on('message', (message) => {
+      const raw = message.toString();
+      let parsed: { jsonrpc?: string; id?: number | string; method?: string; params?: { command?: string } } | undefined;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Not valid JSON — forward as-is
+      }
+
+      if (parsed?.method === 'uplink/shell') {
+        handleShellCommand(ws, parsed.id, parsed.params?.command, resolvedCwd);
+        return;
+      }
+
       if (activeBridge === bridge) {
-        bridge.send(message.toString());
+        bridge.send(raw);
       }
     });
 

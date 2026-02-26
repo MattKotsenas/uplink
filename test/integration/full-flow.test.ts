@@ -404,4 +404,20 @@ describe('ACP bridge full-flow integration', () => {
     },
     TEST_TIMEOUT,
   );
+
+  it(
+    'executes a shell command via uplink/shell',
+    async () => {
+      const ws = await connectWS();
+      // No need to bootstrap an ACP session — uplink/shell is handled directly by the server
+      const result = await rpcRequest<{ stdout: string; stderr: string; exitCode: number }>(
+        ws,
+        'uplink/shell',
+        { command: 'echo hello' },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('hello');
+    },
+    TEST_TIMEOUT,
+  );
 });

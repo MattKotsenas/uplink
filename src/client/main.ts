@@ -1,6 +1,7 @@
 import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
 import { ChatUI } from './ui/chat.js';
+import { renderShellOutput } from './ui/shell.js';
 import { PermissionUI } from './ui/permission.js';
 import { ToolCallUI } from './ui/tool-call.js';
 import { PlanUI } from './ui/plan.js';
@@ -110,9 +111,32 @@ sendBtn.addEventListener('click', async () => {
   const text = promptInput.value.trim();
   if (!text || !client) return;
 
-  conversation.addUserMessage(text);
   promptInput.value = '';
   promptInput.style.height = 'auto';
+
+  if (text.startsWith('!')) {
+    const command = text.slice(1).trim();
+    if (!command) return;
+
+    conversation.addUserMessage(`$ ${command}`);
+
+    try {
+      const result = await client.sendRawRequest<{
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      }>('uplink/shell', { command });
+      chatArea.appendChild(renderShellOutput(command, result.stdout, result.stderr, result.exitCode));
+      chatUI.scrollToBottom();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      chatArea.appendChild(renderShellOutput(command, '', errorMessage, 1));
+      chatUI.scrollToBottom();
+    }
+    return;
+  }
+
+  conversation.addUserMessage(text);
 
   try {
     await client.prompt(text);

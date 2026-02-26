@@ -133,6 +133,11 @@ export class AcpClient {
     } satisfies SessionCancelParams);
   }
 
+  /** Send a raw JSON-RPC request and return the result. Used for uplink-specific methods. */
+  sendRawRequest<T>(method: string, params: unknown): Promise<T> {
+    return this.sendRequest<T>(method, params);
+  }
+
   disconnect(): void {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
