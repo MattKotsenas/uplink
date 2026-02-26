@@ -7,7 +7,10 @@
     "copilot-uplink": "./dist/bin/cli.js"
   },
   "files": [
-    "dist"
+    "dist/bin",
+    "dist/client",
+    "dist/src/server",
+    "dist/src/shared"
   ],
   "scripts": {
     "dev": "vite",
