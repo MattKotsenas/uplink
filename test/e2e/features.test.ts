@@ -32,20 +32,21 @@ test('dark/light mode toggle', async ({ page }) => {
   await page.goto('/');
 
   const html = page.locator('html');
-  const initialTheme = await html.getAttribute('class');
+  const slider = page.locator('label[for="theme-toggle"] .toggle-slider');
 
   // Open hamburger menu to access theme toggle
   await page.locator('#menu-toggle').click();
-  const themeToggle = page.locator('#theme-toggle');
 
-  // Toggle theme
-  await themeToggle.click();
+  // Get current theme and force to a known state
+  const initialTheme = await html.getAttribute('class');
+
+  // Toggle once
+  await slider.click();
   const toggledTheme = initialTheme === 'dark' ? 'light' : 'dark';
   await expect(html).toHaveClass(toggledTheme);
 
-  // Re-open menu and toggle back
-  await page.locator('#menu-toggle').click();
-  await themeToggle.click();
+  // Toggle back
+  await slider.click();
   await expect(html).toHaveClass(initialTheme!);
 });
 
@@ -151,7 +152,7 @@ test('permission buttons have readable contrast in dark mode', async ({ page }) 
   const html = page.locator('html');
   if ((await html.getAttribute('class')) !== 'dark') {
     await page.locator('#menu-toggle').click();
-    await page.locator('#theme-toggle').click();
+    await page.locator('label[for="theme-toggle"] .toggle-slider').click();
   }
 
   // Trigger permission dialog
@@ -224,8 +225,7 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
 
   // Enable yolo mode via menu
   await page.locator('#menu-toggle').click();
-  const yoloToggle = page.locator('#yolo-toggle');
-  await yoloToggle.click();
+  await page.locator('label[for="yolo-toggle"] .toggle-slider').click();
 
   // Close menu
   await page.keyboard.press('Escape');

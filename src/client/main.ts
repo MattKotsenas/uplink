@@ -28,9 +28,9 @@ const modelSelect = document.getElementById('model-select') as HTMLSelectElement
 const modeSelect = document.getElementById('mode-select') as HTMLSelectElement;
 const menuToggle = document.getElementById('menu-toggle')!;
 const menuDropdown = document.getElementById('menu-dropdown')!;
-const themeToggle = document.getElementById('theme-toggle')!;
+const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement;
 const sessionsBtn = document.getElementById('sessions-btn')!;
-const yoloToggle = document.getElementById('yolo-toggle')!;
+const yoloToggle = document.getElementById('yolo-toggle') as HTMLInputElement;
 
 let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 
@@ -59,11 +59,7 @@ function initTheme(): void {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = saved ?? (prefersDark ? 'dark' : 'light');
   document.documentElement.className = theme;
-  updateThemeLabel(theme);
-}
-
-function updateThemeLabel(theme: string): void {
-  themeToggle.textContent = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
+  themeToggle.checked = theme === 'dark';
 }
 
 initTheme();
@@ -306,27 +302,19 @@ promptInput.addEventListener('input', () => {
 
 // ─── Theme Toggle ─────────────────────────────────────────────────────
 
-themeToggle.addEventListener('click', () => {
-  const current = document.documentElement.className;
-  const next = current === 'dark' ? 'light' : 'dark';
+themeToggle.addEventListener('change', () => {
+  const next = themeToggle.checked ? 'dark' : 'light';
   document.documentElement.className = next;
   localStorage.setItem('uplink-theme', next);
-  updateThemeLabel(next);
-  menuDropdown.hidden = true;
-  menuToggle.setAttribute('aria-expanded', 'false');
 });
 
 // ─── Yolo Mode ────────────────────────────────────────────────────────
 
-function updateYoloLabel(): void {
-  yoloToggle.textContent = yoloMode ? '🔓 Yolo mode: ON' : '🔒 Yolo mode: OFF';
-}
-updateYoloLabel();
+yoloToggle.checked = yoloMode;
 
-yoloToggle.addEventListener('click', () => {
-  yoloMode = !yoloMode;
+yoloToggle.addEventListener('change', () => {
+  yoloMode = yoloToggle.checked;
   localStorage.setItem('uplink-yolo', String(yoloMode));
-  updateYoloLabel();
 });
 
 // ─── Model Change ─────────────────────────────────────────────────────
