@@ -4,7 +4,7 @@ import { ChatList, scrollChatToBottom } from './ui/chat.js';
 import { ShellOutput } from './ui/shell.js';
 import { showPermissionRequest, cancelAllPermissions, PermissionList } from './ui/permission.js';
 import { ToolCallList } from './ui/tool-call.js';
-import { PlanUI } from './ui/plan.js';
+import { PlanCard } from './ui/plan.js';
 import { fetchSessions, createSessionListPanel } from './ui/sessions.js';
 import { render, h } from 'preact';
 
@@ -119,8 +119,10 @@ const toolCallContainer = document.createElement('div');
 chatArea.appendChild(toolCallContainer);
 render(h(ToolCallList, { conversation }), toolCallContainer);
 
-const planUI = new PlanUI(chatArea, conversation);
-planUI.attach();
+// Mount Preact plan card into chatArea
+const planContainer = document.createElement('div');
+chatArea.appendChild(planContainer);
+render(h(PlanCard, { conversation }), planContainer);
 
 /** Clear all conversation state and DOM when session changes. */
 function clearConversation(): void {
