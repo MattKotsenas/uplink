@@ -10,8 +10,8 @@
 ## Setup
 
 ```bash
-git clone https://github.com/YOUR_ORG/copilot-uplink.git
-cd copilot-uplink
+git clone https://github.com/MattKotsenas/uplink.git
+cd uplink
 npm install
 ```
 

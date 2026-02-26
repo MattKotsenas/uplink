@@ -27,7 +27,7 @@ const MAX_BACKOFF_MS = 30_000;
 const PROTOCOL_VERSION = 1;
 const CLIENT_CAPABILITIES: ClientCapabilities = {};
 const CLIENT_INFO = {
-  name: "copilot-uplink",
+  name: "uplink",
   title: "Copilot Uplink",
   version: "0.1.0",
 } as const;

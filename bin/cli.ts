@@ -39,7 +39,7 @@ if (hasFlag('help')) {
   console.log(`
 Copilot Uplink — Remote control for GitHub Copilot CLI
 
-Usage: copilot-uplink [options]
+Usage: uplink [options]
 
 Options:
   --port <n>          Port for bridge server (default: 3000)

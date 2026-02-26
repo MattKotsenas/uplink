@@ -1,4 +1,4 @@
-const CACHE_NAME = 'copilot-uplink-v1';
+const CACHE_NAME = 'uplink-v1';
 const SHELL_URLS = ['/', '/index.html', '/style.css'];
 
 self.addEventListener('install', (event) => {

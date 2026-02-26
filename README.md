@@ -3,7 +3,7 @@
 **Remote control for GitHub Copilot CLI from your phone or any browser.**
 
 [![Build](https://img.shields.io/github/actions/workflow/status/MattKotsenas/uplink/ci.yml?branch=main)](https://github.com/MattKotsenas/uplink/actions)
-[![npm](https://img.shields.io/npm/v/copilot-uplink)](https://www.npmjs.com/package/copilot-uplink)
+[![npm](https://img.shields.io/npm/v/@mattkotsenas/uplink)](https://www.npmjs.com/package/@mattkotsenas/uplink)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## What Is This?
@@ -28,10 +28,10 @@ graph LR
 ## Quick Start
 
 ```bash
-npx copilot-uplink
+npx @mattkotsenas/uplink
 
 # With remote access via devtunnel
-npx copilot-uplink --tunnel
+npx @mattkotsenas/uplink --tunnel
 ```
 
 ## How It Works
@@ -118,9 +118,9 @@ devtunnel user login
 
 1. **Start with tunnel:**
    ```bash
-   npx copilot-uplink --tunnel
+   npx @mattkotsenas/uplink --tunnel
    ```
-2. **Scan the QR code** printed in your terminal with your phone's camera.
+2. **Scan the QR code**printed in your terminal with your phone's camera.
 3. **Add to Home Screen** — your browser will offer an "Install" or
    "Add to Home Screen" prompt because the app ships a Web App Manifest and
    Service Worker.
@@ -132,7 +132,7 @@ devtunnel user login
    devtunnel port create my-uplink -p 3000
 
    # Reuse every time
-   npx copilot-uplink --tunnel-id my-uplink
+   npx @mattkotsenas/uplink --tunnel-id my-uplink
    ```
 
 With a persistent tunnel the installed PWA always connects to the same URL.
@@ -142,7 +142,7 @@ a reconnection banner and retries automatically.
 ## CLI Reference
 
 ```
-npx copilot-uplink [options]
+npx @mattkotsenas/uplink [options]
 ```
 
 | Flag | Description | Default |

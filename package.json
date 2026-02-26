@@ -1,5 +1,5 @@
 {
-  "name": "copilot-uplink",
+  "name": "@mattkotsenas/uplink",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
@@ -8,7 +8,7 @@
     "url": "https://github.com/MattKotsenas/uplink.git"
   },
   "bin": {
-    "copilot-uplink": "./dist/bin/cli.js"
+    "uplink": "./dist/bin/cli.js"
   },
   "files": [
     "dist/bin",
