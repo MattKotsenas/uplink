@@ -101,11 +101,6 @@ function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
   );
 }
 
-// TODO: Verify that the real Copilot CLI sends reasoning as `tool_call` updates with
-// `kind: 'think'`. If the format differs, update the bridge or conversation handler.
-// The "thinking..." indicator in ChatList covers the UX gap during long pauses, but
-// actual reasoning content should also render here when the CLI sends it.
-
 /**
  * Renders all tracked tool calls from the conversation.
  * Bridges Conversation.onChange() into Preact re-renders via a version counter.
