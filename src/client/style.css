@@ -386,19 +386,23 @@ body, html {
 
 .thinking-indicator .thinking-dots {
   display: inline-block;
-  min-width: 1.5ch;
+  width: 3ch;
+  text-align: left;
+  overflow: hidden;
 }
 
 .thinking-indicator .thinking-dots::after {
-  content: '...';
+  content: '\2026';
+  display: inline-block;
+  width: 0;
   animation: thinking-ellipsis 1.5s steps(4, end) infinite;
 }
 
 @keyframes thinking-ellipsis {
-  0%  { content: ''; }
-  25% { content: '.'; }
-  50% { content: '..'; }
-  75% { content: '...'; }
+  0%  { width: 0; }
+  25% { width: 1ch; }
+  50% { width: 2ch; }
+  75% { width: 3ch; }
 }
 
 .thinking-indicator {
