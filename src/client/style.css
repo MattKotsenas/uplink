@@ -543,13 +543,13 @@ button:disabled {
 
 .permission-btn.allow {
   background-color: var(--success);
-  color: white;
+  color: var(--bg-primary);
   flex: 1;
 }
 
 .permission-btn.reject {
   background-color: var(--danger);
-  color: white;
+  color: var(--bg-primary);
   flex: 1;
 }
 

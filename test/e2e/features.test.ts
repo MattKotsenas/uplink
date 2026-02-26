@@ -117,3 +117,31 @@ test('thinking/reasoning display', async ({ page }) => {
   // Verify it contains reasoning content
   await expect(thinking).toContainText('analyzed the problem', { timeout: 5000 });
 });
+
+test('permission buttons have readable contrast in dark mode', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Ensure dark mode
+  const html = page.locator('html');
+  if ((await html.getAttribute('class')) !== 'dark') {
+    await page.locator('#menu-toggle').click();
+    await page.locator('#theme-toggle').click();
+  }
+
+  // Trigger permission dialog
+  const input = page.locator('#prompt-input');
+  await input.fill('permission allow');
+  await page.locator('#send-btn').click();
+
+  // Wait for the allow button to appear
+  const allowBtn = page.locator('.permission-btn.allow').first();
+  await expect(allowBtn).toBeVisible({ timeout: 10000 });
+
+  // Verify text color is NOT white — should be a dark color for contrast
+  const color = await allowBtn.evaluate(
+    (el) => getComputedStyle(el).color,
+  );
+  // White is rgb(255, 255, 255) — we want dark text instead
+  expect(color).not.toBe('rgb(255, 255, 255)');
+});
