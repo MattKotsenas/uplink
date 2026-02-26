@@ -90,6 +90,14 @@ sequenceDiagram
 - 🔄 **Auto-reconnect** with exponential backoff (1 s → 30 s max)
 - 🌙 **Dark / light theme**
 
+<details>
+<summary>📱 <strong>See it in action</strong> (click to expand)</summary>
+<br/>
+<p align="center">
+  <img src="docs/mobile-demo.png" alt="Uplink on a mobile device — plan execution with tool calls" width="300" />
+</p>
+</details>
+
 ## Installing Dev Tunnels
 
 Dev Tunnels are required for remote access (`--tunnel`). Install for your platform:
