@@ -138,11 +138,16 @@ export function startServer(options: ServerOptions): ServerResult {
   // Track the active bridge and socket
   let activeBridge: Bridge | null = null;
   let activeSocket: WebSocket | null = null;
+  let selectedModel: string | undefined;
 
   wss.on('connection', (ws, request) => {
-    // Validate session token
+    // Validate session token and read model from query params
     const url = new URL(request.url!, `http://localhost`);
     const token = url.searchParams.get('token');
+    const urlModel = url.searchParams.get('model');
+    if (urlModel) {
+      selectedModel = urlModel;
+    }
     if (token !== sessionToken) {
       ws.close(4001, 'Unauthorized');
       return;
@@ -175,6 +180,13 @@ export function startServer(options: ServerOptions): ServerResult {
       args = options.copilotArgs ?? ['--acp', '--stdio'];
     }
 
+    // Save base args for potential bridge restarts with a different model
+    const baseArgs = args;
+    let spawnedWithModel = selectedModel;
+    if (selectedModel) {
+      args = [...baseArgs, '--model', selectedModel];
+    }
+
     // Discover plugin skills for copilot ACP mode
     const bridgeEnv: Record<string, string | undefined> = {};
     const skillsDirs = process.env.COPILOT_SKILLS_DIRS ?? discoverPluginSkillsDirs();
@@ -191,7 +203,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
     console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
 
-    const bridge = new Bridge(bridgeOptions);
+    let bridge = new Bridge(bridgeOptions);
     activeBridge = bridge;
 
     try {
@@ -229,7 +241,7 @@ export function startServer(options: ServerOptions): ServerResult {
     // WebSocket -> Bridge (with uplink-specific message interception)
     ws.on('message', (message) => {
       const raw = message.toString();
-      let parsed: { jsonrpc?: string; id?: number | string; method?: string; params?: { command?: string } } | undefined;
+      let parsed: { jsonrpc?: string; id?: number | string; method?: string; params?: { command?: string; model?: string } } | undefined;
       try {
         parsed = JSON.parse(raw);
       } catch {
@@ -238,6 +250,68 @@ export function startServer(options: ServerOptions): ServerResult {
 
       if (parsed?.method === 'uplink/shell') {
         handleShellCommand(ws, parsed.id, parsed.params?.command, resolvedCwd);
+        return;
+      }
+
+      if (parsed?.method === 'uplink/set_model') {
+        const newModel = parsed.params?.model || undefined;
+        const needsRestart = activeBridge && spawnedWithModel !== newModel;
+        selectedModel = newModel;
+
+        if (needsRestart) {
+          // kill() removes all listeners, so the bridge close won't close the WS
+          activeBridge!.kill();
+          activeBridge = null;
+
+          const newArgs = newModel ? [...baseArgs, '--model', newModel] : [...baseArgs];
+          const newBridgeOptions: BridgeOptions = {
+            command,
+            args: newArgs,
+            cwd: resolvedCwd,
+            env: Object.keys(bridgeEnv).length > 0 ? bridgeEnv : undefined,
+          };
+          console.log(`Restarting bridge: ${command} ${newArgs.join(' ')}`);
+          const newBridge = new Bridge(newBridgeOptions);
+          activeBridge = newBridge;
+          bridge = newBridge;
+          spawnedWithModel = newModel;
+
+          try {
+            newBridge.spawn();
+          } catch (err) {
+            console.error('Failed to restart bridge:', err);
+            if (parsed.id !== undefined) {
+              ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                id: parsed.id,
+                error: { code: -1, message: 'Failed to restart bridge with new model' },
+              }));
+            }
+            ws.close(1011, 'Failed to restart bridge');
+            return;
+          }
+
+          newBridge.onMessage((line) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(line);
+          });
+          newBridge.onError((err) => {
+            console.error('Bridge error:', err);
+            if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'Bridge error');
+          });
+          newBridge.onClose((code) => {
+            console.log(`Bridge closed with code ${code}`);
+            if (ws.readyState === WebSocket.OPEN) ws.close(1000, 'Bridge closed');
+            if (activeBridge === newBridge) activeBridge = null;
+          });
+        }
+
+        if (parsed.id !== undefined) {
+          ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            id: parsed.id,
+            result: { model: selectedModel ?? null, restarted: !!needsRestart },
+          }));
+        }
         return;
       }
 

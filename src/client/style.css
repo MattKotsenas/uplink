@@ -625,6 +625,10 @@ html.light .hljs-deletion { color: #cf222e; background-color: rgba(207, 34, 46, 
   #header h1 {
     font-size: 1.1rem;
   }
+
+  #model-select {
+    max-width: 120px;
+  }
 }
 
 /* Sessions Panel */

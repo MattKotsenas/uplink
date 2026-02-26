@@ -193,6 +193,27 @@ themeToggle.addEventListener('click', () => {
   updateThemeIcon(next);
 });
 
+// Model change
+const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+modelSelect.addEventListener('change', async () => {
+  const value = modelSelect.value;
+  if (value) {
+    localStorage.setItem('uplink-model', value);
+  } else {
+    localStorage.removeItem('uplink-model');
+  }
+
+  if (client) {
+    try {
+      await client.sendRawRequest('uplink/set_model', { model: value || undefined });
+    } catch {
+      // Best-effort — model will be applied via URL parameter on reload
+    }
+  }
+  // Reload to establish a fresh ACP session with the new model
+  window.location.reload();
+});
+
 // Sessions button
 const sessionsBtn = document.getElementById('sessions-btn')!;
 sessionsBtn.addEventListener('click', async () => {

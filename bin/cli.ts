@@ -29,6 +29,8 @@ function hasFlag(name: string): boolean {
 }
 
 const port = parseInt(getArg('port') ?? '3000', 10);
+// TODO: Pass --model flag through to the bridge server when CLI gains a --model option.
+// Currently, model selection is handled client-side via localStorage and the WS URL parameter.
 const tunnelId = getArg('tunnel-id');
 const useTunnel = hasFlag('tunnel') || !!tunnelId;
 const noTunnel = hasFlag('no-tunnel');
