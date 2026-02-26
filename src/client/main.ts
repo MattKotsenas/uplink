@@ -106,6 +106,7 @@ const conversation = new Conversation();
 
 // Mount Preact chat list into chatArea
 const chatContainer = document.createElement('div');
+chatContainer.className = 'chat-container';
 chatArea.appendChild(chatContainer);
 render(h(ChatList, { conversation, scrollContainer: chatArea }), chatContainer);
 

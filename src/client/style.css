@@ -7,42 +7,46 @@
 }
 
 html.dark {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #1c2128;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --accent-subtle: rgba(99, 102, 241, 0.15);
-  --border: #30363d;
-  --danger: #f85149;
-  --success: #3fb950;
-  --warning: #d29922;
-  --warning-subtle: rgba(210, 153, 34, 0.1);
-  --warning-glow-soft: rgba(210, 153, 34, 0.2);
-  --warning-glow: rgba(210, 153, 34, 0.4);
-  --info: #58a6ff;
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-tertiary: #313244;
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --accent: #cba6f7;
+  --accent-hover: #b4befe;
+  --accent-subtle: rgba(203, 166, 247, 0.15);
+  --border: #45475a;
+  --danger: #f38ba8;
+  --success: #a6e3a1;
+  --warning: #f9e2af;
+  --warning-subtle: rgba(249, 226, 175, 0.1);
+  --warning-glow-soft: rgba(249, 226, 175, 0.15);
+  --warning-glow: rgba(249, 226, 175, 0.3);
+  --info: #89b4fa;
+  --user-msg-bg: #45475a;
+  --user-msg-text: #cdd6f4;
   color-scheme: dark;
 }
 
 html.light {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eef1f5;
-  --text-primary: #24292f;
-  --text-secondary: #57606a;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-subtle: rgba(79, 70, 229, 0.1);
-  --border: #d0d7de;
-  --danger: #cf222e;
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --warning-subtle: rgba(154, 103, 0, 0.1);
-  --warning-glow-soft: rgba(154, 103, 0, 0.15);
-  --warning-glow: rgba(154, 103, 0, 0.3);
-  --info: #0969da;
+  --bg-primary: #eff1f5;
+  --bg-secondary: #e6e9ef;
+  --bg-tertiary: #dce0e8;
+  --text-primary: #4c4f69;
+  --text-secondary: #6c6f85;
+  --accent: #8839ef;
+  --accent-hover: #7287fd;
+  --accent-subtle: rgba(136, 57, 239, 0.1);
+  --border: #ccd0da;
+  --danger: #d20f39;
+  --success: #40a02b;
+  --warning: #df8e1d;
+  --warning-subtle: rgba(223, 142, 29, 0.1);
+  --warning-glow-soft: rgba(223, 142, 29, 0.15);
+  --warning-glow: rgba(223, 142, 29, 0.3);
+  --info: #1e66f5;
+  --user-msg-bg: #ccd0da;
+  --user-msg-text: #4c4f69;
   color-scheme: light;
 }
 
@@ -283,6 +287,12 @@ body, html {
   scroll-behavior: smooth;
 }
 
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .message {
   padding: 0.75rem 1rem;
   border-radius: 8px;
@@ -297,9 +307,9 @@ body, html {
 
 .message.user {
   align-self: flex-end;
-  background-color: var(--accent);
-  color: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  background-color: var(--user-msg-bg);
+  color: var(--user-msg-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .message.agent {
@@ -456,10 +466,10 @@ button:disabled {
   font-weight: bold;
 }
 
-.tool-call .status.pending { background-color: var(--warning); color: #000; }
-.tool-call .status.in_progress { background-color: var(--info); color: #fff; }
-.tool-call .status.completed { background-color: var(--success); color: #fff; }
-.tool-call .status.failed { background-color: var(--danger); color: #fff; }
+.tool-call .status.pending { background-color: var(--warning); color: var(--bg-primary); }
+.tool-call .status.in_progress { background-color: var(--info); color: var(--bg-primary); }
+.tool-call .status.completed { background-color: var(--success); color: var(--bg-primary); }
+.tool-call .status.failed { background-color: var(--danger); color: var(--bg-primary); }
 
 .tool-call-body {
   padding: 0.75rem;
@@ -501,22 +511,17 @@ button:disabled {
 
 /* Permission Requests */
 .permission-request {
-  background-color: var(--warning-subtle);
-  border: 1px solid var(--warning);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
   border-radius: 8px;
   padding: 1rem;
   margin-top: 0.5rem;
-  animation: permission-glow 2s ease-in-out infinite;
-}
-
-@keyframes permission-glow {
-  0%, 100% { box-shadow: 0 0 4px var(--warning-glow-soft); }
-  50% { box-shadow: 0 0 12px var(--warning-glow); }
 }
 
 .permission-header {
   font-weight: 600;
-  color: var(--warning);
+  color: var(--accent);
   margin-bottom: 0.5rem;
   display: flex;
   align-items: center;
@@ -608,12 +613,12 @@ button:disabled {
 
 .priority-high {
   background-color: var(--danger);
-  color: #fff;
+  color: var(--bg-primary);
 }
 
 .priority-medium {
   background-color: var(--warning);
-  color: #000;
+  color: var(--bg-primary);
 }
 
 .priority-low {
@@ -621,66 +626,66 @@ button:disabled {
   color: var(--bg-primary);
 }
 
-/* Syntax Highlighting (highlight.js) */
+/* Syntax Highlighting — Catppuccin Mocha */
 .hljs {
   background: transparent !important;
   padding: 0 !important;
 }
 
-/* Token colors — designed to work in both dark and light modes */
 html.dark .hljs-keyword,
 html.dark .hljs-selector-tag,
-html.dark .hljs-built_in { color: #c678dd; }
+html.dark .hljs-built_in { color: #cba6f7; }
 
 html.dark .hljs-string,
-html.dark .hljs-attribute { color: #98c379; }
+html.dark .hljs-attribute { color: #a6e3a1; }
 
 html.dark .hljs-number,
-html.dark .hljs-literal { color: #d19a66; }
+html.dark .hljs-literal { color: #fab387; }
 
 html.dark .hljs-comment,
-html.dark .hljs-quote { color: #5c6370; font-style: italic; }
+html.dark .hljs-quote { color: #6c7086; font-style: italic; }
 
 html.dark .hljs-function .hljs-title,
-html.dark .hljs-title.function_ { color: #61afef; }
+html.dark .hljs-title.function_ { color: #89b4fa; }
 
 html.dark .hljs-type,
-html.dark .hljs-title.class_ { color: #e5c07b; }
+html.dark .hljs-title.class_ { color: #f9e2af; }
 
 html.dark .hljs-variable,
-html.dark .hljs-template-variable { color: #e06c75; }
+html.dark .hljs-template-variable { color: #f38ba8; }
 
-html.dark .hljs-meta { color: #56b6c2; }
+html.dark .hljs-meta { color: #94e2d5; }
 
-html.dark .hljs-addition { color: #3fb950; background-color: rgba(63, 185, 80, 0.1); }
-html.dark .hljs-deletion { color: #f85149; background-color: rgba(248, 81, 73, 0.1); }
+html.dark .hljs-addition { color: #a6e3a1; background-color: rgba(166, 227, 161, 0.1); }
+html.dark .hljs-deletion { color: #f38ba8; background-color: rgba(243, 139, 168, 0.1); }
 
+/* Syntax Highlighting — Catppuccin Latte */
 html.light .hljs-keyword,
 html.light .hljs-selector-tag,
-html.light .hljs-built_in { color: #8250df; }
+html.light .hljs-built_in { color: #8839ef; }
 
 html.light .hljs-string,
-html.light .hljs-attribute { color: #0a3069; }
+html.light .hljs-attribute { color: #40a02b; }
 
 html.light .hljs-number,
-html.light .hljs-literal { color: #953800; }
+html.light .hljs-literal { color: #fe640b; }
 
 html.light .hljs-comment,
-html.light .hljs-quote { color: #6e7781; font-style: italic; }
+html.light .hljs-quote { color: #9ca0b0; font-style: italic; }
 
 html.light .hljs-function .hljs-title,
-html.light .hljs-title.function_ { color: #0550ae; }
+html.light .hljs-title.function_ { color: #1e66f5; }
 
 html.light .hljs-type,
-html.light .hljs-title.class_ { color: #953800; }
+html.light .hljs-title.class_ { color: #df8e1d; }
 
 html.light .hljs-variable,
-html.light .hljs-template-variable { color: #cf222e; }
+html.light .hljs-template-variable { color: #d20f39; }
 
-html.light .hljs-meta { color: #0550ae; }
+html.light .hljs-meta { color: #179299; }
 
-html.light .hljs-addition { color: #1a7f37; background-color: rgba(26, 127, 55, 0.1); }
-html.light .hljs-deletion { color: #cf222e; background-color: rgba(207, 34, 46, 0.1); }
+html.light .hljs-addition { color: #40a02b; background-color: rgba(64, 160, 43, 0.1); }
+html.light .hljs-deletion { color: #d20f39; background-color: rgba(210, 15, 57, 0.1); }
 
 /* Mobile Responsive */
 @media (max-width: 600px) {
@@ -822,8 +827,9 @@ html.light .hljs-deletion { color: #cf222e; background-color: rgba(207, 34, 46, 
 
 /* Shell Output */
 .shell-output {
-  background-color: #1e1e1e;
-  color: #d4d4d4;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.75rem 1rem;
   font-family: var(--font-mono);
@@ -835,7 +841,7 @@ html.light .hljs-deletion { color: #cf222e; background-color: rgba(207, 34, 46, 
 
 .shell-output .command {
   font-weight: 700;
-  color: #6a9955;
+  color: var(--success);
   margin-bottom: 0.5rem;
 }
 
@@ -851,11 +857,11 @@ html.light .hljs-deletion { color: #cf222e; background-color: rgba(207, 34, 46, 
 }
 
 .shell-output .stderr {
-  color: #f48771;
+  color: var(--danger);
 }
 
 .shell-output .exit-code {
   margin-top: 0.5rem;
-  color: #858585;
+  color: var(--text-secondary);
   font-size: 0.8rem;
 }
