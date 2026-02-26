@@ -218,3 +218,37 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
   const pendingAllowBtn = page.locator('.permission-btn.allow:not([disabled])');
   await expect(pendingAllowBtn).toHaveCount(0);
 });
+
+test('mode selector changes input box border color', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const html = page.locator('html');
+  const input = page.locator('#prompt-input');
+
+  // Default mode is chat — no data-mode attribute or "chat"
+  const defaultMode = await html.getAttribute('data-mode');
+  expect(defaultMode === null || defaultMode === 'chat').toBe(true);
+
+  // Switch to plan mode
+  await page.locator('#menu-toggle').click();
+  await page.locator('#mode-select').selectOption('plan');
+  await page.keyboard.press('Escape');
+
+  // Verify data-mode attribute
+  await expect(html).toHaveAttribute('data-mode', 'plan');
+
+  // Focus the input to trigger border color change
+  await input.focus();
+  const planBorderColor = await input.evaluate(
+    (el) => getComputedStyle(el).borderColor,
+  );
+  // Plan mode should use --info (blue), not --accent (mauve)
+  // In dark mode: --info is #89b4fa, --accent is #cba6f7
+  expect(planBorderColor).not.toBe('rgb(203, 166, 247)'); // not mauve
+
+  // Switch back to chat
+  await page.locator('#menu-toggle').click();
+  await page.locator('#mode-select').selectOption('chat');
+  await expect(html).toHaveAttribute('data-mode', 'chat');
+});

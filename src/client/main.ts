@@ -25,6 +25,7 @@ const promptInput = document.getElementById('prompt-input') as HTMLTextAreaEleme
 const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+const modeSelect = document.getElementById('mode-select') as HTMLSelectElement;
 const menuToggle = document.getElementById('menu-toggle')!;
 const menuDropdown = document.getElementById('menu-dropdown')!;
 const themeToggle = document.getElementById('theme-toggle')!;
@@ -32,6 +33,24 @@ const sessionsBtn = document.getElementById('sessions-btn')!;
 const yoloToggle = document.getElementById('yolo-toggle')!;
 
 let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
+
+// ─── Mode ─────────────────────────────────────────────────────────────
+
+type AgentMode = 'chat' | 'plan';
+let currentMode: AgentMode = (localStorage.getItem('uplink-mode') as AgentMode) ?? 'chat';
+
+function applyMode(mode: AgentMode): void {
+  currentMode = mode;
+  document.documentElement.setAttribute('data-mode', mode);
+  modeSelect.value = mode;
+  localStorage.setItem('uplink-mode', mode);
+}
+
+applyMode(currentMode);
+
+modeSelect.addEventListener('change', () => {
+  applyMode(modeSelect.value as AgentMode);
+});
 
 // ─── Theme ────────────────────────────────────────────────────────────
 
@@ -255,8 +274,13 @@ sendBtn.addEventListener('click', async () => {
 
   conversation.addUserMessage(text);
 
+  // In plan mode, prefix the message to instruct the agent to plan
+  const promptText = currentMode === 'plan' && !text.startsWith('/')
+    ? `[[PLAN]] ${text}`
+    : text;
+
   try {
-    await client.prompt(text);
+    await client.prompt(promptText);
   } catch (err) {
     console.error('Prompt error:', err);
   }
