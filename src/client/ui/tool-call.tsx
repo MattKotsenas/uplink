@@ -101,6 +101,18 @@ function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
   );
 }
 
+// TODO: Reasoning/thinking messages from the real Copilot CLI (especially Opus 4.6
+// with /delve) don't appear in the UI. During extended reasoning the UI looks hung
+// with no visible progress. Investigate:
+// 1. Does the real CLI send reasoning as `tool_call` updates with `kind: 'think'`,
+//    or in a different format we're not handling?
+// 2. The bridge may not be forwarding these updates — add logging to confirm.
+// 3. Even if they arrive, completed tool calls vanish from `ToolCallList` because
+//    it renders `conversation.toolCalls` which only holds in-flight state. Consider
+//    interleaving thinking blocks into the chat message timeline so they persist.
+// 4. At minimum, show a "thinking..." spinner/indicator during long reasoning pauses
+//    so the UI doesn't appear frozen.
+
 /**
  * Renders all tracked tool calls from the conversation.
  * Bridges Conversation.onChange() into Preact re-renders via a version counter.
