@@ -110,6 +110,11 @@ chatContainer.className = 'chat-container';
 chatArea.appendChild(chatContainer);
 render(h(ChatList, { conversation, scrollContainer: chatArea }), chatContainer);
 
+// TODO: Permission bubbles appear below the chat messages in a separate mount container,
+// but the chat continues appending messages above them. This feels disjointed — the
+// permission prompt should visually stay at the bottom of the conversation flow.
+// Investigate interleaving permissions into the chat message list (e.g., rendering them
+// as special items in ChatList) so they maintain correct chronological ordering.
 // Mount Preact permission list into chatArea
 const permissionContainer = document.createElement('div');
 chatArea.appendChild(permissionContainer);
