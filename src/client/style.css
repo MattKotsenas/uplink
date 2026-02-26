@@ -523,7 +523,7 @@ button:disabled {
 
 #cancel-btn:hover {
   background-color: var(--danger);
-  color: white;
+  color: var(--bg-primary);
   border-color: var(--danger);
 }
 
