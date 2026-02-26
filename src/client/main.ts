@@ -1,6 +1,6 @@
 import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
-import { ChatUI } from './ui/chat.js';
+import { ChatList, scrollChatToBottom } from './ui/chat.js';
 import { ShellOutput } from './ui/shell.js';
 import { showPermissionRequest, cancelAllPermissions, PermissionList } from './ui/permission.js';
 import { ToolCallList } from './ui/tool-call.js';
@@ -104,8 +104,10 @@ if ('serviceWorker' in navigator) {
 
 const conversation = new Conversation();
 
-const chatUI = new ChatUI(chatArea, conversation);
-chatUI.attach();
+// Mount Preact chat list into chatArea
+const chatContainer = document.createElement('div');
+chatArea.appendChild(chatContainer);
+render(h(ChatList, { conversation, scrollContainer: chatArea }), chatContainer);
 
 // Mount Preact permission list into chatArea
 const permissionContainer = document.createElement('div');
@@ -123,7 +125,6 @@ planUI.attach();
 /** Clear all conversation state and DOM when session changes. */
 function clearConversation(): void {
   conversation.clear();
-  chatUI.clear();
   cancelAllPermissions(conversation);
   // Remove non-tracked elements (shell output, etc.) from chatArea
   while (chatArea.firstChild) {
@@ -214,13 +215,13 @@ sendBtn.addEventListener('click', async () => {
       const container = document.createElement('div');
       chatArea.appendChild(container);
       render(h(ShellOutput, { command, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }), container);
-      chatUI.scrollToBottom();
+      scrollChatToBottom(chatArea);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       const container = document.createElement('div');
       chatArea.appendChild(container);
       render(h(ShellOutput, { command, stdout: '', stderr: errorMessage, exitCode: 1 }), container);
-      chatUI.scrollToBottom();
+      scrollChatToBottom(chatArea);
     }
     return;
   }
