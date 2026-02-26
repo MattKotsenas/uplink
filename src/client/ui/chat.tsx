@@ -133,7 +133,7 @@ export function ChatList({
       {showThinking && (
         <div class="message agent thinking-indicator">
           <div class="content">
-            <span class="thinking-dots">Thinking</span>
+            <span class="thinking-dots" />
           </div>
         </div>
       )}
