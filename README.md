@@ -2,11 +2,9 @@
 
 **Remote control for GitHub Copilot CLI from your phone or any browser.**
 
-<!-- Badges: uncomment when CI / npm publish are set up
-[![Build](https://img.shields.io/github/actions/workflow/status/YOUR_ORG/copilot-uplink/ci.yml?branch=main)](https://github.com/YOUR_ORG/copilot-uplink/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/MattKotsenas/uplink/ci.yml?branch=main)](https://github.com/MattKotsenas/uplink/actions)
 [![npm](https://img.shields.io/npm/v/copilot-uplink)](https://www.npmjs.com/package/copilot-uplink)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
--->
 
 ## What Is This?
 
@@ -30,16 +28,11 @@ graph LR
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_ORG/copilot-uplink.git
-cd copilot-uplink
-npm install && npm run build
-npx tsx bin/cli.ts
+npx copilot-uplink
 
 # With remote access via devtunnel
-npx tsx bin/cli.ts --tunnel
+npx copilot-uplink --tunnel
 ```
-
-<!-- After publishing to npm: npx copilot-uplink [options] -->
 
 ## How It Works
 
@@ -125,7 +118,7 @@ devtunnel user login
 
 1. **Start with tunnel:**
    ```bash
-   npx tsx bin/cli.ts --tunnel
+   npx copilot-uplink --tunnel
    ```
 2. **Scan the QR code** printed in your terminal with your phone's camera.
 3. **Add to Home Screen** — your browser will offer an "Install" or
@@ -139,7 +132,7 @@ devtunnel user login
    devtunnel port create my-uplink -p 3000
 
    # Reuse every time
-   npx tsx bin/cli.ts --tunnel-id my-uplink
+   npx copilot-uplink --tunnel-id my-uplink
    ```
 
 With a persistent tunnel the installed PWA always connects to the same URL.
@@ -149,7 +142,7 @@ a reconnection banner and retries automatically.
 ## CLI Reference
 
 ```
-npx tsx bin/cli.ts [options]
+npx copilot-uplink [options]
 ```
 
 | Flag | Description | Default |
