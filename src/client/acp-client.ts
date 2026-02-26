@@ -117,6 +117,7 @@ export class AcpClient {
       mcpServers: [],
     } satisfies SessionLoadParams);
     this.sessionId = sessionId;
+    localStorage.setItem('uplink-resume-session', sessionId);
   }
 
   async prompt(text: string): Promise<StopReason> {
@@ -263,10 +264,9 @@ export class AcpClient {
 
     this.agentCapabilities = initResult.agentCapabilities ?? {};
 
-    // Try to resume a saved session (e.g., after model change)
+    // Try to resume a saved session (e.g., after page reload or model change)
     const resumeId = localStorage.getItem('uplink-resume-session');
     if (resumeId && this.agentCapabilities.loadSession) {
-      localStorage.removeItem('uplink-resume-session');
       try {
         await this.sendRequest("session/load", {
           sessionId: resumeId,
@@ -277,15 +277,16 @@ export class AcpClient {
         return;
       } catch {
         // Resume failed — fall through to new session
+        localStorage.removeItem('uplink-resume-session');
       }
     }
-    localStorage.removeItem('uplink-resume-session');
 
     const { sessionId } = await this.sendRequest<SessionNewResult>(
       "session/new",
       { cwd: this.options.cwd, mcpServers: [] },
     );
     this.sessionId = sessionId;
+    localStorage.setItem('uplink-resume-session', sessionId);
   }
 
   private handleClose(): void {

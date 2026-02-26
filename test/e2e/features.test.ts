@@ -141,6 +141,18 @@ test('model change resumes same session', async ({ page }) => {
   expect(resumeId).toMatch(/^mock-session-/);
 });
 
+test('session is persisted to localStorage for page reload resume', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // After connecting, uplink-resume-session should be saved in localStorage
+  const sessionId = await page.evaluate(() =>
+    localStorage.getItem('uplink-resume-session'),
+  );
+  expect(sessionId).toBeTruthy();
+  expect(sessionId).toMatch(/^mock-session-/);
+});
+
 test('thinking/reasoning display', async ({ page }) => {
   await page.goto('/');
 

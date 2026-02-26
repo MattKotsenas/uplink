@@ -374,6 +374,7 @@ sessionsBtn.addEventListener('click', async () => {
     },
     async () => {
       clearConversation();
+      localStorage.removeItem('uplink-resume-session');
       client!.disconnect();
       try {
         client = await initializeClient();
