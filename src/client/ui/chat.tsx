@@ -1,4 +1,5 @@
 import { h } from 'preact';
+import type { ComponentChildren } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { Conversation, ConversationMessage } from '../conversation.js';
 import hljs from 'highlight.js/lib/core';
@@ -104,9 +105,11 @@ function ChatMessage({ msg }: { msg: ConversationMessage }) {
 export function ChatList({
   conversation,
   scrollContainer,
+  children,
 }: {
   conversation: Conversation;
   scrollContainer: HTMLElement;
+  children?: preact.ComponentChildren;
 }) {
   const [, setVersion] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,6 +133,7 @@ export function ChatList({
       {conversation.messages.map((msg, i) => (
         <ChatMessage key={i} msg={msg} />
       ))}
+      {children}
       {showThinking && (
         <div class="message agent thinking-indicator">
           <div class="content">

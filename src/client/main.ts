@@ -127,28 +127,23 @@ if ('serviceWorker' in navigator) {
 const conversation = new Conversation();
 
 // Mount all timeline components into a single chatContainer.
-// ChatList gets its own mount div, then tool calls, permissions, and plans
-// follow in DOM order so they appear at the bottom of the message flow.
+// ChatList renders messages, and child components (tool calls, permissions,
+// plans) are passed as children so they appear inline in the message flow.
 const chatContainer = document.createElement('div');
-chatContainer.className = 'chat-container';
+chatContainer.className = 'chat-container chat-messages';
 chatArea.appendChild(chatContainer);
 
-const chatMountDiv = document.createElement('div');
-chatMountDiv.className = 'chat-messages';
-chatContainer.appendChild(chatMountDiv);
-render(h(ChatList, { conversation, scrollContainer: chatArea }), chatMountDiv);
-
-const toolCallContainer = document.createElement('div');
-chatContainer.appendChild(toolCallContainer);
-render(h(ToolCallList, { conversation }), toolCallContainer);
-
-const permissionContainer = document.createElement('div');
-chatContainer.appendChild(permissionContainer);
-render(h(PermissionList, { conversation }), permissionContainer);
-
-const planContainer = document.createElement('div');
-chatContainer.appendChild(planContainer);
-render(h(PlanCard, { conversation }), planContainer);
+function renderChat(): void {
+  render(
+    h(ChatList, { conversation, scrollContainer: chatArea },
+      h(ToolCallList, { conversation }),
+      h(PermissionList, { conversation }),
+      h(PlanCard, { conversation }),
+    ),
+    chatContainer,
+  );
+}
+renderChat();
 
 // Mount Preact sessions modal on body
 const sessionsModalContainer = document.createElement('div');
@@ -156,14 +151,14 @@ document.body.appendChild(sessionsModalContainer);
 render(h(SessionsModal, {}), sessionsModalContainer);
 
 /** Clear all conversation state and DOM when session changes. */
-const preactContainers = new Set([chatContainer]);
+const preactContainers: Set<Node> = new Set([chatContainer]);
 
 function clearConversation(): void {
   conversation.clear();
   cancelAllPermissions(conversation);
   // Remove non-tracked elements (shell output, etc.) but preserve Preact mount points
   for (const child of [...chatArea.childNodes]) {
-    if (!preactContainers.has(child as HTMLElement)) {
+    if (!preactContainers.has(child)) {
       chatArea.removeChild(child);
     }
   }
