@@ -55,17 +55,16 @@ describe('PermissionCard', () => {
     expect(received).toEqual({ outcome: 'selected', optionId: 'allow-once' });
   });
 
-  it('disables buttons after selection', () => {
+  it('collapses to summary after selection', () => {
     const respond = () => {};
     showPermissionRequest(conversation, 3, 'tc-3', 'Delete file', makeOptions(), respond);
 
     render(<PermissionList conversation={conversation} />);
     fireEvent.click(screen.getByText('Allow once'));
 
-    const buttons = screen.getAllByRole('button');
-    for (const btn of buttons) {
-      expect((btn as HTMLButtonElement).disabled).toBe(true);
-    }
+    // After resolution, buttons are gone — collapsed to a summary
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getByText('Approved')).toBeTruthy();
   });
 
   it('shows Approved label after allowing', () => {

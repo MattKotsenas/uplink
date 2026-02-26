@@ -550,6 +550,19 @@ button:disabled {
   margin-top: 0.5rem;
 }
 
+.permission-request.resolved {
+  padding: 0.5rem 1rem;
+  opacity: 0.8;
+}
+
+.permission-outcome {
+  font-size: 0.8rem;
+  font-weight: 400;
+  margin-left: auto;
+}
+.permission-outcome.approved { color: var(--success); }
+.permission-outcome.denied { color: var(--danger); }
+
 .permission-header {
   font-weight: 600;
   color: var(--accent);
@@ -557,6 +570,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.permission-request.resolved .permission-header {
+  margin-bottom: 0;
 }
 
 .permission-actions {

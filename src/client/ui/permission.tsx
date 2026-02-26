@@ -91,6 +91,24 @@ function PermissionCard({
   conversation: Conversation;
 }) {
   const resolved = req.resolved.value;
+  const selectedOption = req.options.find(
+    (o) => o.optionId === req.selectedOptionId.value,
+  );
+  const wasApproved = selectedOption?.kind.startsWith('allow');
+
+  if (resolved) {
+    return (
+      <div class="permission-request resolved">
+        <div class="permission-header">
+          <span class="permission-icon">{wasApproved ? '✅' : '❌'}</span>
+          <span class="permission-title">{req.title}</span>
+          <span class={`permission-outcome ${wasApproved ? 'approved' : 'denied'}`}>
+            {wasApproved ? 'Approved' : 'Denied'}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div class={`permission-request${resolved ? ' resolved' : ''}`}>
