@@ -1,4 +1,4 @@
-# ⬆ Copilot Uplink
+# <img src="src/client/icon.svg" alt="orbit" width="28" height="28" /> Copilot Uplink
 
 **Remote control for GitHub Copilot CLI from your phone or any browser.**
 
