@@ -75,7 +75,7 @@ async function listen(server: ReturnType<typeof startServer>['server'], desiredP
 }
 
 async function main() {
-  console.log('⬆ Copilot Uplink starting...');
+  console.log('🛰 Copilot Uplink starting...');
   console.log();
 
   const staticDir = resolveStaticDir();
