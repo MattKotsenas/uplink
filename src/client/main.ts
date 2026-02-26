@@ -7,25 +7,10 @@ import { ToolCallUI } from './ui/tool-call.js';
 import { PlanUI } from './ui/plan.js';
 import { fetchSessions, createSessionListPanel } from './ui/sessions.js';
 
-// Theme: initialize from localStorage or system preference
-function initTheme(): void {
-  const saved = localStorage.getItem('uplink-theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = saved ?? (prefersDark ? 'dark' : 'light');
-  document.documentElement.className = theme;
-  updateThemeIcon(theme);
-}
+// ─── Constants ────────────────────────────────────────────────────────
 
-function updateThemeIcon(theme: string): void {
-  const btn = document.getElementById('theme-toggle');
-  if (btn) {
-    btn.textContent = theme === 'dark' ? '☀️' : '🌙';
-  }
-}
+const DEFAULT_MODEL = 'claude-sonnet-4';
 
-initTheme();
-
-// Model selector
 const MODELS = [
   'claude-sonnet-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
   'claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5',
@@ -34,67 +19,138 @@ const MODELS = [
   'gpt-5.1', 'gpt-5.1-codex-mini', 'gpt-5-mini', 'gpt-4.1',
 ];
 
-function initModelSelector(): void {
-  const select = document.getElementById('model-select') as HTMLSelectElement;
-  if (!select) return;
+// ─── DOM References ───────────────────────────────────────────────────
 
+const chatArea = document.getElementById('chat-area')!;
+const promptInput = document.getElementById('prompt-input') as HTMLTextAreaElement;
+const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
+const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
+const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+const menuToggle = document.getElementById('menu-toggle')!;
+const menuDropdown = document.getElementById('menu-dropdown')!;
+const themeToggle = document.getElementById('theme-toggle')!;
+const sessionsBtn = document.getElementById('sessions-btn')!;
+
+// ─── Theme ────────────────────────────────────────────────────────────
+
+function initTheme(): void {
+  const saved = localStorage.getItem('uplink-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved ?? (prefersDark ? 'dark' : 'light');
+  document.documentElement.className = theme;
+  updateThemeLabel(theme);
+}
+
+function updateThemeLabel(theme: string): void {
+  themeToggle.textContent = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
+}
+
+initTheme();
+
+// ─── Model Selector ───────────────────────────────────────────────────
+
+function initModelSelector(): void {
   for (const model of MODELS) {
     const option = document.createElement('option');
     option.value = model;
     option.textContent = model;
-    select.appendChild(option);
+    modelSelect.appendChild(option);
   }
 
-  const saved = localStorage.getItem('uplink-model');
-  if (saved) select.value = saved;
+  const saved = localStorage.getItem('uplink-model') ?? DEFAULT_MODEL;
+  modelSelect.value = saved;
 }
 
 initModelSelector();
 
-// Register service worker for PWA
+// ─── Hamburger Menu ───────────────────────────────────────────────────
+
+menuToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = !menuDropdown.hidden;
+  menuDropdown.hidden = isOpen;
+  menuToggle.setAttribute('aria-expanded', String(!isOpen));
+});
+
+document.addEventListener('click', (e) => {
+  if (!menuDropdown.hidden && !menuDropdown.contains(e.target as Node)) {
+    menuDropdown.hidden = true;
+    menuToggle.setAttribute('aria-expanded', 'false');
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !menuDropdown.hidden) {
+    menuDropdown.hidden = true;
+    menuToggle.setAttribute('aria-expanded', 'false');
+    menuToggle.focus();
+  }
+});
+
+// ─── Service Worker ───────────────────────────────────────────────────
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(err => {
     console.warn('SW registration failed:', err);
   });
 }
 
-// Create instances
+// ─── UI Components ────────────────────────────────────────────────────
+
 const conversation = new Conversation();
 
-const chatArea = document.getElementById('chat-area')!;
-
-const chatUI = new ChatUI(
-  chatArea,
-  conversation,
-);
+const chatUI = new ChatUI(chatArea, conversation);
 chatUI.attach();
 
 const permissionUI = new PermissionUI(chatArea, conversation);
 
-const toolCallUI = new ToolCallUI(
-  chatArea,
-  conversation,
-);
+const toolCallUI = new ToolCallUI(chatArea, conversation);
 toolCallUI.attach();
 
 const planUI = new PlanUI(chatArea, conversation);
 planUI.attach();
 
-// Determine WS URL (same origin)
+/** Clear all conversation state and DOM when session changes. */
+function clearConversation(): void {
+  conversation.clear();
+  chatUI.clear();
+  permissionUI.cancelAll();
+  // Remove non-tracked elements (shell output, etc.) from chatArea
+  while (chatArea.firstChild) {
+    chatArea.removeChild(chatArea.firstChild);
+  }
+}
+
+// ─── WebSocket / ACP Client ──────────────────────────────────────────
+
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-// Fetch session token and connect
+let client: AcpClient | null = null;
+let clientCwd: string = '';
+
+function updateConnectionStatus(state: ConnectionState): void {
+  const el = document.getElementById('connection-status')!;
+  el.textContent = state;
+  el.className = `status-${
+    state === 'ready' || state === 'prompting'
+      ? 'connected'
+      : state === 'connecting' || state === 'initializing'
+        ? 'reconnecting'
+        : 'disconnected'
+  }`;
+
+  sendBtn.disabled = state !== 'ready';
+  cancelBtn.hidden = state !== 'prompting';
+}
+
 async function initializeClient() {
   const tokenResponse = await fetch('/api/token');
   const { token, cwd } = await tokenResponse.json();
   clientCwd = cwd;
-  const savedModel = localStorage.getItem('uplink-model');
-  let wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
-  if (savedModel) {
-    wsUrl += `&model=${encodeURIComponent(savedModel)}`;
-  }
+  const selectedModel = localStorage.getItem('uplink-model') ?? DEFAULT_MODEL;
+  const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}&model=${encodeURIComponent(selectedModel)}`;
 
-  const client = new AcpClient({
+  return new AcpClient({
     wsUrl,
     cwd,
     onStateChange: (state) => updateConnectionStatus(state),
@@ -110,35 +166,9 @@ async function initializeClient() {
     },
     onError: (error) => console.error('ACP error:', error),
   });
-
-  return client;
 }
 
-// Connection status UI
-function updateConnectionStatus(state: ConnectionState): void {
-  const el = document.getElementById('connection-status')!;
-  el.textContent = state;
-  el.className = `status-${
-    state === 'ready' || state === 'prompting'
-      ? 'connected'
-      : state === 'connecting' || state === 'initializing'
-        ? 'reconnecting'
-        : 'disconnected'
-  }`;
-
-  const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
-  const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
-  sendBtn.disabled = state !== 'ready';
-  cancelBtn.hidden = state !== 'prompting';
-}
-
-// Input handling
-const promptInput = document.getElementById('prompt-input') as HTMLTextAreaElement;
-const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
-const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
-
-let client: AcpClient | null = null;
-let clientCwd: string = '';
+// ─── Input Handling ───────────────────────────────────────────────────
 
 sendBtn.addEventListener('click', async () => {
   const text = promptInput.value.trim();
@@ -183,35 +213,47 @@ cancelBtn.addEventListener('click', () => {
   permissionUI.cancelAll();
 });
 
-// Theme toggle
-const themeToggle = document.getElementById('theme-toggle')!;
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendBtn.click();
+  }
+});
+
+promptInput.addEventListener('input', () => {
+  promptInput.style.height = 'auto';
+  const maxH = 150;
+  const scrollH = promptInput.scrollHeight;
+  promptInput.style.height = Math.min(scrollH, maxH) + 'px';
+  promptInput.style.overflowY = scrollH > maxH ? 'auto' : 'hidden';
+});
+
+// ─── Theme Toggle ─────────────────────────────────────────────────────
+
 themeToggle.addEventListener('click', () => {
   const current = document.documentElement.className;
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.className = next;
   localStorage.setItem('uplink-theme', next);
-  updateThemeIcon(next);
+  updateThemeLabel(next);
+  menuDropdown.hidden = true;
+  menuToggle.setAttribute('aria-expanded', 'false');
 });
 
-// Model change
-const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+// ─── Model Change ─────────────────────────────────────────────────────
+
 modelSelect.addEventListener('change', async () => {
   const value = modelSelect.value;
-  if (value) {
-    localStorage.setItem('uplink-model', value);
-  } else {
-    localStorage.removeItem('uplink-model');
-  }
+  localStorage.setItem('uplink-model', value);
 
   if (client) {
     try {
-      await client.sendRawRequest('uplink/set_model', { model: value || undefined });
+      await client.sendRawRequest('uplink/set_model', { model: value });
     } catch {
       // Best-effort — model will be applied via URL parameter on reload
     }
   }
-  // Reload to establish a fresh ACP session with the new model
-  // Save the current session ID so we can resume after restart
+  // Save current session so we can resume after restart
   const currentSessionId = client?.currentSessionId;
   if (currentSessionId) {
     localStorage.setItem('uplink-resume-session', currentSessionId);
@@ -219,10 +261,11 @@ modelSelect.addEventListener('change', async () => {
   window.location.reload();
 });
 
-// Sessions button
-const sessionsBtn = document.getElementById('sessions-btn')!;
+// ─── Sessions ─────────────────────────────────────────────────────────
+
 sessionsBtn.addEventListener('click', async () => {
   if (!client || !clientCwd) return;
+  menuDropdown.hidden = true;
 
   const sessions = await fetchSessions(clientCwd);
   const panel = createSessionListPanel(
@@ -230,6 +273,7 @@ sessionsBtn.addEventListener('click', async () => {
     client.supportsLoadSession,
     {
       onResume: async (sessionId) => {
+        clearConversation();
         try {
           await client!.loadSession(sessionId);
         } catch (err) {
@@ -237,7 +281,7 @@ sessionsBtn.addEventListener('click', async () => {
         }
       },
       onNewSession: () => {
-        // Reconnect to start a fresh session
+        clearConversation();
         client!.disconnect();
         client!.connect().catch((err) => {
           console.error('Failed to create new session:', err);
@@ -248,24 +292,8 @@ sessionsBtn.addEventListener('click', async () => {
   document.body.appendChild(panel);
 });
 
-// Enter to send (Shift+Enter for newline)
-promptInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendBtn.click();
-  }
-});
+// ─── Connect ──────────────────────────────────────────────────────────
 
-// Auto-resize textarea
-promptInput.addEventListener('input', () => {
-  promptInput.style.height = 'auto';
-  const maxH = 150;
-  const scrollH = promptInput.scrollHeight;
-  promptInput.style.height = Math.min(scrollH, maxH) + 'px';
-  promptInput.style.overflowY = scrollH > maxH ? 'auto' : 'hidden';
-});
-
-// Connect!
 initializeClient().then((c) => {
   client = c;
   client.connect();

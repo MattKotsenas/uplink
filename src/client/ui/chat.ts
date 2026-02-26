@@ -37,7 +37,8 @@ export class ChatUI {
   private chatArea: HTMLElement;
   private conversation: Conversation;
   private unsubscribe: (() => void) | null = null;
-  private renderedCount = 0;
+  // Track our own elements — chatArea is shared with ToolCallUI, PermissionUI, etc.
+  private renderedElements: HTMLElement[] = [];
 
   constructor(chatArea: HTMLElement, conversation: Conversation) {
     this.chatArea = chatArea;
@@ -54,29 +55,37 @@ export class ChatUI {
     this.unsubscribe = null;
   }
 
+  /** Remove all rendered message elements and reset tracking state. */
+  clear(): void {
+    for (const el of this.renderedElements) {
+      el.remove();
+    }
+    this.renderedElements = [];
+  }
+
   private render(): void {
     const messages = this.conversation.messages;
 
     // Update existing message elements that may have changed content (streaming)
-    for (let i = 0; i < this.renderedCount && i < messages.length; i++) {
-      const el = this.chatArea.children[i] as HTMLElement;
-      const contentEl = el.querySelector('.content');
+    for (let i = 0; i < this.renderedElements.length && i < messages.length; i++) {
+      const contentEl = this.renderedElements[i].querySelector('.content');
       if (contentEl) {
         contentEl.innerHTML = this.renderMarkdown(messages[i].content);
       }
     }
 
     // Remove excess elements if messages were cleared
-    while (this.chatArea.children.length > messages.length) {
-      this.chatArea.removeChild(this.chatArea.lastChild!);
+    while (this.renderedElements.length > messages.length) {
+      this.renderedElements.pop()!.remove();
     }
 
     // Append new messages
-    for (let i = this.renderedCount; i < messages.length; i++) {
-      this.chatArea.appendChild(this.renderMessage(messages[i]));
+    for (let i = this.renderedElements.length; i < messages.length; i++) {
+      const el = this.renderMessage(messages[i]);
+      this.chatArea.appendChild(el);
+      this.renderedElements.push(el);
     }
 
-    this.renderedCount = messages.length;
     this.scrollToBottom();
   }
 

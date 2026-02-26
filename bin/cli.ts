@@ -143,7 +143,13 @@ async function main() {
     setTimeout(() => process.exit(1), 5000);
   };
 
-  process.on('SIGINT', shutdown);
+  process.on('SIGINT', () => {
+    shutdown();
+    // Exit after synchronous cleanup to avoid "Terminate batch job?" on Windows.
+    // The shutdown() call above synchronously kills child processes and sends
+    // WS close frames; the async server.close() callback is best-effort.
+    setImmediate(() => process.exit(0));
+  });
   process.on('SIGTERM', shutdown);
 }
 
