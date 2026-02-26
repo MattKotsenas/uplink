@@ -50,6 +50,25 @@ test('dark/light mode toggle', async ({ page }) => {
   await expect(html).toHaveClass(initialTheme!);
 });
 
+test('toggle icons change with state', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#menu-toggle').click();
+
+  const themeLabel = page.locator('label[for="theme-toggle"]');
+  const themeOff = themeLabel.locator('.toggle-icon-off');
+  const themeOn = themeLabel.locator('.toggle-icon-on');
+
+  // Check initial visibility (one shown, other hidden)
+  const offVisible = await themeOff.isVisible();
+  const onVisible = await themeOn.isVisible();
+  expect(offVisible).not.toBe(onVisible); // exactly one is visible
+
+  // Toggle and verify icons swap
+  await themeLabel.locator('.toggle-slider').click();
+  await expect(themeOff).toHaveCSS('display', offVisible ? 'none' : 'inline');
+  await expect(themeOn).toHaveCSS('display', onVisible ? 'none' : 'inline');
+});
+
 test('shell command execution', async ({ page }) => {
   await page.goto('/');
 

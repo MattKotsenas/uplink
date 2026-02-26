@@ -302,6 +302,12 @@ body, html {
   flex: 1;
 }
 
+/* Toggle icon switching: show off-icon by default, on-icon when checked */
+.toggle-icon-on { display: none; }
+.toggle-icon-off { display: inline; }
+.menu-item:has(input:checked) .toggle-icon-on { display: inline; }
+.menu-item:has(input:checked) .toggle-icon-off { display: none; }
+
 /* Model Selector (inside menu) */
 #model-select,
 #mode-select {
