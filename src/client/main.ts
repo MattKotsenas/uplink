@@ -2,7 +2,7 @@ import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
 import { ChatUI } from './ui/chat.js';
 import { ShellOutput } from './ui/shell.js';
-import { PermissionUI } from './ui/permission.js';
+import { showPermissionRequest, cancelAllPermissions, PermissionList } from './ui/permission.js';
 import { ToolCallUI } from './ui/tool-call.js';
 import { PlanUI } from './ui/plan.js';
 import { fetchSessions, createSessionListPanel } from './ui/sessions.js';
@@ -107,7 +107,10 @@ const conversation = new Conversation();
 const chatUI = new ChatUI(chatArea, conversation);
 chatUI.attach();
 
-const permissionUI = new PermissionUI(chatArea, conversation);
+// Mount Preact permission list into chatArea
+const permissionContainer = document.createElement('div');
+chatArea.appendChild(permissionContainer);
+render(h(PermissionList, { conversation }), permissionContainer);
 
 const toolCallUI = new ToolCallUI(chatArea, conversation);
 toolCallUI.attach();
@@ -119,7 +122,7 @@ planUI.attach();
 function clearConversation(): void {
   conversation.clear();
   chatUI.clear();
-  permissionUI.cancelAll();
+  cancelAllPermissions(conversation);
   // Remove non-tracked elements (shell output, etc.) from chatArea
   while (chatArea.firstChild) {
     chatArea.removeChild(chatArea.firstChild);
@@ -172,7 +175,8 @@ async function initializeClient() {
     onStateChange: (state) => updateConnectionStatus(state),
     onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
     onPermissionRequest: (request, respond) => {
-      permissionUI.showPermissionRequest(
+      showPermissionRequest(
+        conversation,
         request.id,
         request.toolCall.toolCallId,
         request.toolCall.title ?? 'Unknown action',
@@ -230,7 +234,7 @@ sendBtn.addEventListener('click', async () => {
 
 cancelBtn.addEventListener('click', () => {
   client?.cancel();
-  permissionUI.cancelAll();
+  cancelAllPermissions(conversation);
 });
 
 promptInput.addEventListener('keydown', (e) => {
