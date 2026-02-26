@@ -35,6 +35,21 @@ export function recordSession(cwd: string, sessionId: string, dbPath: string = S
   }
 }
 
+/** Rename a session's summary in the session store. */
+export function renameSession(sessionId: string, summary: string, dbPath: string = SESSION_STORE_PATH): void {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(dbPath);
+    db.prepare(
+      'UPDATE sessions SET summary = ?, updated_at = datetime(\'now\') WHERE id = ?',
+    ).run(summary, sessionId);
+  } catch (err: unknown) {
+    console.warn('Failed to rename session:', (err as Error).message);
+  } finally {
+    db?.close();
+  }
+}
+
 export function getRecentSessions(cwd: string, limit: number = 20, dbPath: string = SESSION_STORE_PATH): Promise<SessionInfo[]> {
   return Promise.resolve(querySessionsSync(cwd, limit, dbPath));
 }

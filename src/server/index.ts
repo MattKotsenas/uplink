@@ -7,7 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
 import { homedir } from 'node:os';
-import { getRecentSessions, recordSession } from './sessions.js';
+import { getRecentSessions, recordSession, renameSession } from './sessions.js';
 
 export interface ServerOptions {
   port: number;                    // default 3000
@@ -259,7 +259,7 @@ export function startServer(options: ServerOptions): ServerResult {
     // WebSocket -> Bridge (with uplink-specific message interception)
     ws.on('message', (message) => {
       const raw = message.toString();
-      let parsed: { jsonrpc?: string; id?: number | string; method?: string; params?: { command?: string; model?: string } } | undefined;
+      let parsed: { jsonrpc?: string; id?: number | string; method?: string; params?: { command?: string; model?: string; sessionId?: string; summary?: string } } | undefined;
       try {
         parsed = JSON.parse(raw);
       } catch {
@@ -268,6 +268,17 @@ export function startServer(options: ServerOptions): ServerResult {
 
       if (parsed?.method === 'uplink/shell') {
         handleShellCommand(ws, parsed.id, parsed.params?.command, resolvedCwd);
+        return;
+      }
+
+      if (parsed?.method === 'uplink/rename_session') {
+        const { sessionId, summary } = parsed.params ?? {};
+        if (parsed.id !== undefined && sessionId && summary) {
+          renameSession(sessionId, summary);
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }));
+        } else if (parsed.id !== undefined) {
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, error: { code: -32602, message: 'Missing sessionId or summary' } }));
+        }
         return;
       }
 

@@ -368,3 +368,17 @@ test('autopilot mode auto-continues and shows green border', async ({ page }) =>
   // Agent should have responded to the continue with a final message
   await expect(page.locator('.message.agent').last()).toContainText('Done', { timeout: 10000 });
 });
+
+test('/session command renames the session', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Send /session rename command
+  const input = page.locator('#prompt-input');
+  await input.fill('/session My Test Session');
+  await page.locator('#send-btn').click();
+
+  // Should show a confirmation message in the chat
+  const renameMsg = page.locator('.message.user').filter({ hasText: 'Session renamed to "My Test Session"' });
+  await expect(renameMsg).toBeVisible({ timeout: 5000 });
+});

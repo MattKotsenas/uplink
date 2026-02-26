@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { getRecentSessions, recordSession } from '../../src/server/sessions.js';
+import { getRecentSessions, recordSession, renameSession } from '../../src/server/sessions.js';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -164,5 +164,64 @@ describe('recordSession', () => {
 
   it('does not throw for nonexistent DB path', () => {
     expect(() => recordSession('/x', 's1', '/nonexistent/path.db')).not.toThrow();
+  });
+});
+
+describe('renameSession', () => {
+  const tmpFiles: string[] = [];
+
+  function createTestDb(): string {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uplink-test-'));
+    const dbPath = path.join(tmpDir, 'session-store.db');
+    tmpFiles.push(dbPath, tmpDir);
+
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT,
+        branch TEXT,
+        summary TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+    db.close();
+    return dbPath;
+  }
+
+  afterEach(() => {
+    for (const f of tmpFiles.reverse()) {
+      try {
+        if (fs.statSync(f).isDirectory()) {
+          fs.rmSync(f, { recursive: true });
+        } else {
+          fs.unlinkSync(f);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    tmpFiles.length = 0;
+  });
+
+  it('updates the summary of an existing session', async () => {
+    const dbPath = createTestDb();
+    recordSession('/projects/a', 'sess-1', dbPath);
+
+    renameSession('sess-1', 'My Cool Session', dbPath);
+
+    const result = await getRecentSessions('/projects/a', 20, dbPath);
+    expect(result).toHaveLength(1);
+    expect(result[0].summary).toBe('My Cool Session');
+  });
+
+  it('does nothing for a nonexistent session', () => {
+    const dbPath = createTestDb();
+    expect(() => renameSession('no-such-id', 'Name', dbPath)).not.toThrow();
+  });
+
+  it('does not throw for nonexistent DB path', () => {
+    expect(() => renameSession('s1', 'Name', '/nonexistent/path.db')).not.toThrow();
   });
 });

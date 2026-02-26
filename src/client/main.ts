@@ -260,6 +260,24 @@ sendBtn.addEventListener('click', async () => {
     return;
   }
 
+  // /session <name> — rename the current session
+  if (text.startsWith('/session ')) {
+    const name = text.slice('/session '.length).trim();
+    if (!name || !client.currentSessionId) return;
+
+    try {
+      await client.sendRawRequest('uplink/rename_session', {
+        sessionId: client.currentSessionId,
+        summary: name,
+      });
+      conversation.addUserMessage(`Session renamed to "${name}"`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      conversation.addUserMessage(`Failed to rename session: ${msg}`);
+    }
+    return;
+  }
+
   conversation.addUserMessage(text);
 
   // In plan mode, prefix the message to instruct the agent to plan
