@@ -189,3 +189,32 @@ test('shows thinking indicator while waiting for agent response', async ({ page 
   // After response completes, the thinking indicator should be gone
   await expect(thinking).toHaveCount(0);
 });
+
+test('yolo mode auto-approves permission requests', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Enable yolo mode via menu
+  await page.locator('#menu-toggle').click();
+  const yoloToggle = page.locator('#yolo-toggle');
+  await yoloToggle.click();
+
+  // Close menu
+  await page.keyboard.press('Escape');
+
+  // Send a permission-triggering message
+  const input = page.locator('#prompt-input');
+  await input.fill('permission allow');
+  await page.locator('#send-btn').click();
+
+  // Wait for the response to complete — permission should be auto-approved
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // The permission card should show "Approved" (auto-approved, not pending)
+  const approved = page.locator('.permission-request').filter({ hasText: 'Approved' });
+  await expect(approved).toHaveCount(1, { timeout: 5000 });
+
+  // No pending permission buttons should be visible
+  const pendingAllowBtn = page.locator('.permission-btn.allow:not([disabled])');
+  await expect(pendingAllowBtn).toHaveCount(0);
+});

@@ -29,6 +29,9 @@ const menuToggle = document.getElementById('menu-toggle')!;
 const menuDropdown = document.getElementById('menu-dropdown')!;
 const themeToggle = document.getElementById('theme-toggle')!;
 const sessionsBtn = document.getElementById('sessions-btn')!;
+const yoloToggle = document.getElementById('yolo-toggle')!;
+
+let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 
 // ─── Theme ────────────────────────────────────────────────────────────
 
@@ -194,11 +197,13 @@ async function initializeClient() {
     cwd,
     onStateChange: (state) => updateConnectionStatus(state),
     onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
-    // TODO: Understand how permissions work with Copilot CLI's --yolo flag.
-    // Can the user toggle auto-accept permissions mid-session from the chat UI?
-    // Or does the bridge process need to be started with --yolo? If so, should
-    // we expose a flag in the Uplink UI that restarts the bridge with --yolo?
     onPermissionRequest: (request, respond) => {
+      const autoApproveId = yoloMode
+        ? request.options.find(
+            (o) => o.kind === 'allow_once' || o.kind === 'allow_always',
+          )?.optionId
+        : undefined;
+
       showPermissionRequest(
         conversation,
         request.id,
@@ -206,6 +211,7 @@ async function initializeClient() {
         request.toolCall.title ?? 'Unknown action',
         request.options,
         respond,
+        autoApproveId,
       );
     },
     onError: (error) => console.error('ACP error:', error),
@@ -286,6 +292,19 @@ themeToggle.addEventListener('click', () => {
   updateThemeLabel(next);
   menuDropdown.hidden = true;
   menuToggle.setAttribute('aria-expanded', 'false');
+});
+
+// ─── Yolo Mode ────────────────────────────────────────────────────────
+
+function updateYoloLabel(): void {
+  yoloToggle.textContent = yoloMode ? '🔓 Yolo mode: ON' : '🔒 Yolo mode: OFF';
+}
+updateYoloLabel();
+
+yoloToggle.addEventListener('click', () => {
+  yoloMode = !yoloMode;
+  localStorage.setItem('uplink-yolo', String(yoloMode));
+  updateYoloLabel();
 });
 
 // ─── Model Change ─────────────────────────────────────────────────────

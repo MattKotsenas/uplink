@@ -30,22 +30,27 @@ export function showPermissionRequest(
   title: string,
   options: PermissionOption[],
   respond: PermissionResponder,
+  autoApproveOptionId?: string,
 ): void {
   // Remove any existing request with the same ID
   removeRequest(requestId);
   conversation.trackPermission(requestId, toolCallId, title, options);
 
-  activeRequests.value = [
-    ...activeRequests.value,
-    {
-      requestId,
-      title,
-      options,
-      respond,
-      resolved: signal(false),
-      selectedOptionId: signal(undefined),
-    },
-  ];
+  const req: ActiveRequest = {
+    requestId,
+    title,
+    options,
+    respond,
+    resolved: signal(!!autoApproveOptionId),
+    selectedOptionId: signal(autoApproveOptionId),
+  };
+
+  activeRequests.value = [...activeRequests.value, req];
+
+  if (autoApproveOptionId) {
+    respond({ outcome: 'selected', optionId: autoApproveOptionId });
+    conversation.resolvePermission(requestId, autoApproveOptionId);
+  }
 }
 
 export function cancelAllPermissions(conversation: Conversation): void {
