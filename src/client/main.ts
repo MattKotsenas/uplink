@@ -20,12 +20,11 @@ let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 // ─── Mode ─────────────────────────────────────────────────────────────
 
 type AgentMode = 'chat' | 'plan' | 'autopilot';
-let currentMode: AgentMode = (localStorage.getItem('uplink-mode') as AgentMode) ?? 'chat';
+let currentMode: AgentMode = 'chat';
 
 function applyMode(mode: AgentMode): void {
   currentMode = mode;
   document.documentElement.setAttribute('data-mode', mode);
-  localStorage.setItem('uplink-mode', mode);
 }
 
 applyMode(currentMode);
@@ -222,6 +221,11 @@ sendBtn.addEventListener('click', async () => {
 cancelBtn.addEventListener('click', () => {
   client?.cancel();
   cancelAllPermissions(conversation);
+  // Stop autopilot auto-continue loop by switching back to chat mode
+  if (currentMode === 'autopilot') {
+    applyMode('chat');
+    conversation.addSystemMessage('Autopilot cancelled');
+  }
 });
 
 promptInput.addEventListener('keydown', (e) => {
