@@ -331,8 +331,7 @@ pre code {
 /* Input Area */
 #input-area {
   position: relative;
-  padding: var(--space-4);
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--space-6));
+  padding: var(--space-5) var(--space-4) max(env(safe-area-inset-bottom, 0px), var(--space-6)) var(--space-4);
   background-color: var(--bg-secondary);
   border-top: 1px solid var(--border);
   display: flex;
