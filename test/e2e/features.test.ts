@@ -81,6 +81,29 @@ test('slash command palette appears on / keystroke', async ({ page }) => {
   await expect(palette).not.toBeVisible();
 });
 
+test('clicking a command shows sub-options in palette', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
+
+  // Type /s to filter to /session
+  await input.fill('/s');
+  await expect(palette).toBeVisible();
+
+  // Click /session
+  await palette.locator('.command-palette-item').first().click();
+
+  // Input should now contain "/session "
+  await expect(input).toHaveValue('/session ');
+
+  // Sub-options should appear (rename, list)
+  await expect(palette).toBeVisible();
+  await expect(palette.locator('.command-palette-item')).toHaveCount(2);
+  await expect(palette.locator('.command-palette-label').first()).toContainText('Rename');
+});
+
 test('shell command execution', async ({ page }) => {
   await page.goto('/');
 

@@ -313,12 +313,17 @@ function hidePalette(): void {
 
 function acceptCompletion(item: PaletteItem): void {
   promptInput.value = item.fill;
-  hidePalette();
   promptInput.focus();
   // If the fill is a complete command (no trailing space), execute it
   const parsed = parseSlashCommand(item.fill);
   if (parsed && parsed.complete) {
+    hidePalette();
     sendBtn.click();
+  } else if (item.fill.endsWith(' ')) {
+    // Command accepted but needs a sub-option — refresh the palette
+    showPalette();
+  } else {
+    hidePalette();
   }
 }
 

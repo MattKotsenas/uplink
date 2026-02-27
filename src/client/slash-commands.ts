@@ -11,6 +11,8 @@ export interface SlashCommandOption {
   label: string;
   value: string;
   detail?: string;
+  /** If true, this option requires additional freeform text after it. */
+  needsArg?: boolean;
 }
 
 export interface SlashCommand {
@@ -71,9 +73,8 @@ export const commands: SlashCommand[] = [
     description: 'Manage sessions',
     kind: 'client',
     options: [
-      { label: 'Create new', value: 'create' },
-      { label: 'Rename', value: 'rename' },
-      { label: 'Resume', value: 'resume' },
+      { label: 'Rename', value: 'rename', needsArg: true },
+      { label: 'List', value: 'list' },
     ],
   },
 ];
@@ -100,9 +101,20 @@ export function parseSlashCommand(text: string): ParsedCommand | undefined {
     return { command: `/${name}`, arg, kind: 'cli', complete: true };
   }
 
-  // A command is "complete" if it has no options, or if an arg is provided
+  // A command is "complete" if it has no options, or if an arg satisfies the requirement
   const hasOptions = (command.options?.length ?? 0) > 0 || command.getOptions != null;
-  const complete = !hasOptions || arg.length > 0;
+  if (!hasOptions) {
+    return { command: `/${command.name}`, arg, kind: command.kind, complete: true };
+  }
+  if (arg.length === 0) {
+    return { command: `/${command.name}`, arg, kind: command.kind, complete: false };
+  }
+
+  // Check if the first word of arg matches an option that needs more text
+  const argWords = arg.split(/\s+/);
+  const options = command.getOptions?.() ?? command.options ?? [];
+  const matchedOption = options.find((o) => o.value.toLowerCase() === argWords[0].toLowerCase());
+  const complete = matchedOption?.needsArg ? argWords.length > 1 : true;
 
   return { command: `/${command.name}`, arg, kind: command.kind, complete };
 }
