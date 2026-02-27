@@ -585,3 +585,22 @@ test('shell-input border reverts to plan mode if plan was active', async ({ page
   await input.fill('echo hello');
   await expect(html).toHaveAttribute('data-mode', 'plan');
 });
+
+test('sending a shell command reverts border to current mode', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const html = page.locator('html');
+
+  // Start in chat mode
+  await expect(html).toHaveAttribute('data-mode', 'chat');
+
+  // Send a shell command
+  await input.fill('!echo hello');
+  await expect(html).toHaveAttribute('data-mode', 'shell-input');
+  await page.locator('#send-btn').click();
+
+  // After sending, border should revert to chat mode immediately
+  await expect(html).toHaveAttribute('data-mode', 'chat');
+});

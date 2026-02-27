@@ -158,6 +158,7 @@ sendBtn.addEventListener('click', async () => {
   promptInput.value = '';
   promptInput.style.height = 'auto';
   hidePalette();
+  document.documentElement.setAttribute('data-mode', currentMode);
 
   // Shell commands: !<command>
   if (text.startsWith('!')) {
