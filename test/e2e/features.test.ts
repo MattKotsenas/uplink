@@ -419,3 +419,30 @@ test('input, send button, and cancel button have matching heights', async ({ pag
   expect(cancelBox).not.toBeNull();
   expect(cancelBox!.height).toBeCloseTo(sendBox!.height, 0);
 });
+
+test('tool call and permission icons have consistent left alignment', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Trigger tool call
+  await page.locator('#prompt-input').fill('tool');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.tool-call').first()).toBeVisible({ timeout: 10000 });
+
+  // Trigger permission
+  await page.locator('#prompt-input').fill('permission allow');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.permission-request').first()).toBeVisible({ timeout: 10000 });
+
+  // Measure icon left edges relative to their card container
+  const toolIconX = await page.locator('.tool-call .kind-icon').first().boundingBox();
+  const toolCardX = await page.locator('.tool-call').first().boundingBox();
+  const permIconX = await page.locator('.permission-request .permission-icon').first().boundingBox();
+  const permCardX = await page.locator('.permission-request').first().boundingBox();
+
+  const toolOffset = toolIconX!.x - toolCardX!.x;
+  const permOffset = permIconX!.x - permCardX!.x;
+
+  // Icons should start at the same offset from their card's left edge
+  expect(toolOffset).toBeCloseTo(permOffset, 0);
+});

@@ -631,12 +631,11 @@ button:disabled {
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
   border-radius: 6px;
-  padding: 1rem;
+  padding: 0.5rem 0.75rem;
   margin-top: 0.5rem;
 }
 
 .permission-request.resolved {
-  padding: 0.5rem 1rem;
   opacity: 0.8;
 }
 
@@ -671,7 +670,7 @@ button:disabled {
 .permission-actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .permission-btn.allow {
