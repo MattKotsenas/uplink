@@ -182,14 +182,7 @@ export type ContentBlock =
   | TextContentBlock
   | ImageContentBlock
   | ResourceLinkContentBlock
-  | ResourceContentBlock
-  | ThinkingContentBlock;
-
-/** A thinking/reasoning content block (chain-of-thought). */
-export interface ThinkingContentBlock {
-  type: "thinking";
-  thinking: string;
-}
+  | ResourceContentBlock;
 
 // ─── Tool Calls ───────────────────────────────────────────────────────
 
@@ -257,6 +250,12 @@ export interface AgentMessageChunkUpdate {
   content: ContentBlock;
 }
 
+/** Agent thought chunk update (chain-of-thought reasoning, streamed token-by-token). */
+export interface AgentThoughtChunkUpdate {
+  sessionUpdate: "agent_thought_chunk";
+  content: ContentBlock;
+}
+
 /** User message chunk update. */
 export interface UserMessageChunkUpdate {
   sessionUpdate: "user_message_chunk";
@@ -307,6 +306,7 @@ export interface PlanSessionUpdate {
  */
 export type SessionUpdate =
   | AgentMessageChunkUpdate
+  | AgentThoughtChunkUpdate
   | UserMessageChunkUpdate
   | ToolCallSessionUpdate
   | ToolCallUpdateSessionUpdate

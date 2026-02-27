@@ -384,13 +384,12 @@ describe('Conversation', () => {
       expect(conversation.messages[0].content).toBe('hello');
     });
 
-    it('thinking content block in agent_message_chunk creates a think tool call', () => {
+    it('agent_thought_chunk creates a think tool call', () => {
       conversation.handleSessionUpdate({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'thinking', thinking: 'Let me consider...' } as any
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'Starting interactive diff review' }
       });
 
-      // Should create a tool call with kind: 'think', not a message
       expect(conversation.messages).toHaveLength(0);
       expect(conversation.toolCalls.size).toBe(1);
       const tc = [...conversation.toolCalls.values()][0];
@@ -398,18 +397,22 @@ describe('Conversation', () => {
       expect(tc.status).toBe('in_progress');
       expect(tc.content[0]).toEqual({
         type: 'content',
-        content: { type: 'text', text: 'Let me consider...' }
+        content: { type: 'text', text: 'Starting interactive diff review' }
       });
     });
 
-    it('consecutive thinking blocks accumulate into same tool call', () => {
+    it('consecutive agent_thought_chunks accumulate into same tool call', () => {
       conversation.handleSessionUpdate({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'thinking', thinking: 'First thought.' } as any
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'The user wants' }
       });
       conversation.handleSessionUpdate({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'thinking', thinking: ' Second thought.' } as any
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: ' to start' }
+      });
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: ' a delve session.' }
       });
 
       expect(conversation.toolCalls.size).toBe(1);
@@ -417,24 +420,33 @@ describe('Conversation', () => {
       expect(tc.content).toHaveLength(1);
       expect(tc.content[0]).toEqual({
         type: 'content',
-        content: { type: 'text', text: 'First thought. Second thought.' }
+        content: { type: 'text', text: 'The user wants to start a delve session.' }
       });
     });
 
-    it('text after thinking completes the thinking tool call', () => {
+    it('agent_message_chunk after agent_thought_chunk completes thinking', () => {
       conversation.handleSessionUpdate({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'thinking', thinking: 'Reasoning...' } as any
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'Let me think...' }
       });
       conversation.handleSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'Here is my answer.' }
+        content: { type: 'text', text: 'Here is the answer.' }
       });
 
       const tc = [...conversation.toolCalls.values()][0];
       expect(tc.status).toBe('completed');
       expect(conversation.messages).toHaveLength(1);
-      expect(conversation.messages[0].content).toBe('Here is my answer.');
+      expect(conversation.messages[0].content).toBe('Here is the answer.');
+    });
+
+    it('whitespace-only text chunks do not create new messages', () => {
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '\n\n' }
+      });
+
+      expect(conversation.messages).toHaveLength(0);
     });
 
     it('clear() resets everything', () => {

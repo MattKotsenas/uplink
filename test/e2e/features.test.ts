@@ -507,8 +507,10 @@ test('thinking content blocks render as collapsible reasoning', async ({ page })
   await expect(agentMsg).toBeVisible({ timeout: 10000 });
   await expect(agentMsg).toContainText('thinking it through');
 
-  // Thinking content should also be rendered (not silently dropped)
+  // Thinking content should be rendered as a collapsible block
   const thinking = page.locator('.tool-call-thinking');
   await expect(thinking).toBeAttached({ timeout: 5000 });
+  // Both streamed thought chunks should be accumulated
   await expect(thinking).toContainText('consider the approach');
+  await expect(thinking).toContainText('database schema');
 });

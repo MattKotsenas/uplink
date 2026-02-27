@@ -102,18 +102,18 @@ export class Conversation {
 
   handleSessionUpdate(update: SessionUpdate): void {
     switch (update.sessionUpdate) {
-      case "agent_message_chunk": {
-        const content = update.content;
-        if ("thinking" in content && content.type === "thinking") {
-          this.appendThinking((content as { thinking: string }).thinking);
-        } else {
-          this.completeThinking();
-          this.appendAgentText(
-            content.type === "text" ? content.text : "",
-          );
-        }
+      case "agent_message_chunk":
+        this.completeThinking();
+        this.appendAgentText(
+          update.content.type === "text" ? update.content.text : "",
+        );
         break;
-      }
+
+      case "agent_thought_chunk":
+        this.appendThinking(
+          update.content.type === "text" ? update.content.text : "",
+        );
+        break;
 
       case "user_message_chunk":
         this.appendUserText(
@@ -242,7 +242,7 @@ export class Conversation {
       last.content += text;
       const msgIndex = this.messages.length - 1;
       this.moveToEnd((e) => e.type === "message" && e.index === msgIndex);
-    } else if (text) {
+    } else if (text.trim()) {
       this.messages.push({ role: "agent", content: text, timestamp: Date.now() });
       this.timeline.push({ type: "message", index: this.messages.length - 1 });
     }

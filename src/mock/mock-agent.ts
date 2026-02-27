@@ -335,15 +335,15 @@ async function scenarioReasoning(requestId: number | string): Promise<void> {
 }
 
 async function scenarioThinking(requestId: number | string): Promise<void> {
-  // Simulate real CLI sending thinking content blocks as agent_message_chunk
+  // Simulate real CLI sending agent_thought_chunk (streamed token-by-token)
   sendSessionUpdate({
-    sessionUpdate: "agent_message_chunk",
-    content: { type: "thinking", thinking: "Let me consider the approach..." } as ContentBlock,
+    sessionUpdate: "agent_thought_chunk",
+    content: { type: "text", text: "Let me consider the approach..." },
   });
   await delay(50);
   sendSessionUpdate({
-    sessionUpdate: "agent_message_chunk",
-    content: { type: "thinking", thinking: "I should check the database schema first." } as ContentBlock,
+    sessionUpdate: "agent_thought_chunk",
+    content: { type: "text", text: " I should check the database schema first." },
   });
   await delay(50);
   sendPromptChunk(requestId, "Here's what I found after thinking it through.");
