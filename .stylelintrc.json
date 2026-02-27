@@ -1,0 +1,33 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "plugins": ["stylelint-declaration-strict-value"],
+  "rules": {
+    "scale-unlimited/declaration-strict-value": [
+      ["padding", "padding-top", "padding-right", "padding-bottom", "padding-left", "margin", "margin-top", "margin-right", "margin-bottom", "margin-left", "gap", "row-gap", "column-gap", "font-size", "border-radius"],
+      {
+        "ignoreValues": ["0", "auto", "none", "inherit", "initial", "unset", "50%", "/^\\d+(\\.\\d+)?em$/", "18px"],
+        "expandShorthand": true,
+        "disableFix": true,
+        "message": "Use design tokens (--space-*, --text-*, --radius-*) instead of raw values for \"${property}\""
+      }
+    ],
+    "import-notation": null,
+    "value-keyword-case": null,
+    "no-descending-specificity": null,
+    "selector-id-pattern": null,
+    "custom-property-pattern": null,
+    "selector-class-pattern": null,
+    "keyframes-name-pattern": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "alpha-value-notation": null,
+    "color-function-notation": null,
+    "color-function-alias-notation": null,
+    "declaration-empty-line-before": null,
+    "length-zero-no-unit": null,
+    "declaration-block-single-line-max-declarations": null,
+    "shorthand-property-no-redundant-values": null,
+    "rule-empty-line-before": null,
+    "property-no-deprecated": null,
+    "media-feature-range-notation": null
+  }
+}
