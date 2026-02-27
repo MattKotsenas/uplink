@@ -873,7 +873,7 @@ html.light .hljs-addition { color: #40a02b; background-color: rgb(64 160 43 / 10
 html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10%); }
 
 /* Mobile Responsive */
-@media (max-width: 600px) {
+@media (width <= 600px) {
   #app {
     max-width: 100%;
   }

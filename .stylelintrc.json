@@ -20,7 +20,6 @@
     "declaration-empty-line-before": null,
     "length-zero-no-unit": null,
     "declaration-block-single-line-max-declarations": null,
-    "rule-empty-line-before": null,
-    "media-feature-range-notation": null
+    "rule-empty-line-before": null
   }
 }
