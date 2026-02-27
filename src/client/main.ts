@@ -274,14 +274,8 @@ promptInput.addEventListener('keydown', (e) => {
   }
 });
 
-promptInput.addEventListener('input', () => {
-  promptInput.style.height = 'auto';
-  const maxH = 150;
-  const scrollH = promptInput.scrollHeight;
-  promptInput.style.height = Math.min(scrollH, maxH) + 'px';
-  promptInput.style.overflowY = scrollH > maxH ? 'auto' : 'hidden';
-
-  // Dynamic border preview based on input prefix
+/** Update the input border color to preview the mode implied by the current input text. */
+function updateBorderPreview(): void {
   if (promptInput.value.startsWith('!')) {
     document.documentElement.setAttribute('data-mode', 'shell-input');
   } else if (promptInput.value.startsWith('/')) {
@@ -295,6 +289,17 @@ promptInput.addEventListener('input', () => {
   } else {
     document.documentElement.setAttribute('data-mode', currentMode);
   }
+}
+
+promptInput.addEventListener('input', () => {
+  promptInput.style.height = 'auto';
+  const maxH = 150;
+  const scrollH = promptInput.scrollHeight;
+  promptInput.style.height = Math.min(scrollH, maxH) + 'px';
+  promptInput.style.overflowY = scrollH > maxH ? 'auto' : 'hidden';
+
+  // Dynamic border preview based on input prefix
+  updateBorderPreview();
 
   // Show/update command palette when typing /
   if (promptInput.value.startsWith('/')) {
@@ -343,6 +348,7 @@ function hidePalette(): void {
 function acceptCompletion(item: PaletteItem): void {
   promptInput.value = item.fill;
   promptInput.focus();
+  updateBorderPreview();
   if (item.fill.endsWith(' ')) {
     // Top-level command selected — show sub-options or let user type more
     showPalette();

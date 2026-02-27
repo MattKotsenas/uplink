@@ -687,3 +687,26 @@ test('typing /autopilot previews autopilot border', async ({ page }) => {
   await input.fill('hello');
   await expect(html).toHaveAttribute('data-mode', 'chat');
 });
+
+test('clicking /plan in palette previews plan border immediately', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const html = page.locator('html');
+  const palette = page.locator('.command-palette');
+
+  // Start in chat mode
+  await expect(html).toHaveAttribute('data-mode', 'chat');
+
+  // Type / to open palette
+  await input.fill('/');
+  await expect(palette).toBeVisible();
+
+  // Click /plan in the palette
+  const planItem = palette.locator('.command-palette-item', { hasText: 'plan' }).first();
+  await planItem.click();
+
+  // Border should preview plan mode immediately
+  await expect(html).toHaveAttribute('data-mode', 'plan');
+});
