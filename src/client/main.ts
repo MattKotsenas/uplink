@@ -1,7 +1,6 @@
 import { AcpClient, ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
-import { ChatList, scrollChatToBottom } from './ui/chat.js';
-import { ShellOutput } from './ui/shell.js';
+import { ChatList } from './ui/chat.js';
 import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js';
 import { fetchSessions, openSessionsModal, SessionsModal } from './ui/sessions.js';
 import { render, h } from 'preact';
@@ -147,7 +146,7 @@ const preactContainers: Set<Node> = new Set([chatContainer]);
 function clearConversation(): void {
   conversation.clear();
   cancelAllPermissions(conversation);
-  // Remove non-tracked elements (shell output, etc.) but preserve Preact mount points
+  // Remove any orphan DOM elements outside Preact mount points
   for (const child of [...chatArea.childNodes]) {
     if (!preactContainers.has(child)) {
       chatArea.removeChild(child);
@@ -247,16 +246,10 @@ sendBtn.addEventListener('click', async () => {
         stderr: string;
         exitCode: number;
       }>('uplink/shell', { command });
-      const container = document.createElement('div');
-      chatArea.appendChild(container);
-      render(h(ShellOutput, { command, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }), container);
-      scrollChatToBottom(chatArea);
+      conversation.addShellResult(command, result.stdout, result.stderr, result.exitCode);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      const container = document.createElement('div');
-      chatArea.appendChild(container);
-      render(h(ShellOutput, { command, stdout: '', stderr: errorMessage, exitCode: 1 }), container);
-      scrollChatToBottom(chatArea);
+      conversation.addShellResult(command, '', errorMessage, 1);
     }
     return;
   }

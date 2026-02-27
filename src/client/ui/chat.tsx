@@ -5,6 +5,7 @@ import type { TimelineEntry } from '../conversation.js';
 import { ToolCallCard } from './tool-call.js';
 import { PermissionCard, activeRequests } from './permission.js';
 import { PlanCard } from './plan.js';
+import { ShellOutput } from './shell.js';
 import hljs from 'highlight.js/lib/core';
 import typescript from 'highlight.js/lib/languages/typescript';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -130,6 +131,10 @@ function TimelineItem({
     }
     case 'plan':
       return <PlanCard conversation={conversation} />;
+    case 'shell': {
+      const sr = conversation.shellResults.get(entry.id);
+      return sr ? <ShellOutput command={sr.command} stdout={sr.stdout} stderr={sr.stderr} exitCode={sr.exitCode} /> : null;
+    }
   }
 }
 
@@ -139,6 +144,7 @@ function timelineKey(entry: TimelineEntry): string {
     case 'toolCall': return `tc-${entry.toolCallId}`;
     case 'permission': return `perm-${entry.requestId}`;
     case 'plan': return 'plan';
+    case 'shell': return `shell-${entry.id}`;
   }
 }
 

@@ -470,3 +470,26 @@ test('failed tool call shows status message when expanded', async ({ page }) => 
   const bodyText = await body.textContent();
   expect(bodyText!.trim().length).toBeGreaterThan(0);
 });
+
+test('shell output appears inline in timeline, not pinned to bottom', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Send a shell command
+  const input = page.locator('#prompt-input');
+  await input.fill('!echo hello');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.shell-output')).toBeVisible({ timeout: 10000 });
+
+  // Send a normal message after
+  await input.fill('follow up');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.user').nth(1)).toBeVisible({ timeout: 10000 });
+
+  // Shell output should be above the follow-up user message
+  const shellBox = await page.locator('.shell-output').boundingBox();
+  const followUpBox = await page.locator('.message.user').nth(1).boundingBox();
+  expect(shellBox).toBeTruthy();
+  expect(followUpBox).toBeTruthy();
+  expect(shellBox!.y).toBeLessThan(followUpBox!.y);
+});

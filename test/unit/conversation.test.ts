@@ -398,6 +398,7 @@ describe('Conversation', () => {
         sessionUpdate: 'plan',
         entries: []
       });
+      conversation.addShellResult('ls', 'out', '', 0);
 
       conversation.clear();
 
@@ -405,6 +406,7 @@ describe('Conversation', () => {
       expect(conversation.toolCalls.size).toBe(0);
       expect(conversation.permissions).toHaveLength(0);
       expect(conversation.plan).toBeNull();
+      expect(conversation.shellResults.size).toBe(0);
     });
   });
 
@@ -516,6 +518,49 @@ describe('Conversation', () => {
         { type: 'toolCall', toolCallId: 'tc1' },
         { type: 'toolCall', toolCallId: 'tc2' },
         { type: 'message', index: 1 }   // agent (moved to end)
+      ]);
+    });
+  });
+
+  describe('Shell results in timeline', () => {
+    it('addShellResult adds a shell entry to the timeline', () => {
+      conversation.addShellResult('echo hello', 'hello\n', '', 0);
+
+      expect(conversation.shellResults.size).toBe(1);
+      const sr = conversation.shellResults.get(0);
+      expect(sr).toEqual({ id: 0, command: 'echo hello', stdout: 'hello\n', stderr: '', exitCode: 0 });
+      expect(conversation.timeline).toEqual([{ type: 'shell', id: 0 }]);
+    });
+
+    it('shell results appear inline with messages in timeline order', () => {
+      conversation.addUserMessage('$ echo hello');
+      conversation.addShellResult('echo hello', 'hello\n', '', 0);
+      conversation.addUserMessage('next message');
+
+      expect(conversation.timeline).toEqual([
+        { type: 'message', index: 0 },
+        { type: 'shell', id: 0 },
+        { type: 'message', index: 1 },
+      ]);
+    });
+
+    it('clear() resets shell results', () => {
+      conversation.addShellResult('ls', 'file.txt\n', '', 0);
+      conversation.clear();
+
+      expect(conversation.shellResults.size).toBe(0);
+      expect(conversation.timeline).toHaveLength(0);
+    });
+
+    it('shell IDs increment across multiple results', () => {
+      conversation.addShellResult('cmd1', 'out1', '', 0);
+      conversation.addShellResult('cmd2', 'out2', '', 1);
+
+      expect(conversation.shellResults.get(0)!.command).toBe('cmd1');
+      expect(conversation.shellResults.get(1)!.command).toBe('cmd2');
+      expect(conversation.timeline).toEqual([
+        { type: 'shell', id: 0 },
+        { type: 'shell', id: 1 },
       ]);
     });
   });

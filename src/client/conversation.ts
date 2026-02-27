@@ -38,11 +38,20 @@ export interface TrackedPlan {
   entries: PlanEntry[];
 }
 
+export interface TrackedShellResult {
+  id: number;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
 export type TimelineEntry =
   | { type: "message"; index: number }
   | { type: "toolCall"; toolCallId: string }
   | { type: "permission"; requestId: number }
-  | { type: "plan" };
+  | { type: "plan" }
+  | { type: "shell"; id: number };
 
 // ─── Conversation State ───────────────────────────────────────────────
 
@@ -50,9 +59,11 @@ export class Conversation {
   messages: ConversationMessage[] = [];
   toolCalls: Map<string, TrackedToolCall> = new Map();
   permissions: TrackedPermission[] = [];
+  shellResults: Map<number, TrackedShellResult> = new Map();
   plan: TrackedPlan | null = null;
   timeline: TimelineEntry[] = [];
   isPrompting = false;
+  private nextShellId = 0;
 
   private listeners: Set<() => void> = new Set();
 
@@ -75,6 +86,13 @@ export class Conversation {
   addUserMessage(text: string): void {
     this.messages.push({ role: "user", content: text, timestamp: Date.now() });
     this.timeline.push({ type: "message", index: this.messages.length - 1 });
+    this.notify();
+  }
+
+  addShellResult(command: string, stdout: string, stderr: string, exitCode: number): void {
+    const id = this.nextShellId++;
+    this.shellResults.set(id, { id, command, stdout, stderr, exitCode });
+    this.timeline.push({ type: "shell", id });
     this.notify();
   }
 
@@ -194,8 +212,10 @@ export class Conversation {
     this.messages = [];
     this.toolCalls.clear();
     this.permissions = [];
+    this.shellResults.clear();
     this.plan = null;
     this.timeline = [];
+    this.nextShellId = 0;
     this.notify();
   }
 
