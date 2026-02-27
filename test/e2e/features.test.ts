@@ -1,5 +1,18 @@
 import { test, expect } from '@playwright/test';
 
+test('PWA manifest and icons are accessible', async ({ page, request }) => {
+  const manifest = await request.get('/manifest.json');
+  expect(manifest.ok()).toBe(true);
+  const json = await manifest.json();
+  expect(json.name).toBe('Copilot Uplink');
+
+  // Verify icon files are reachable
+  for (const icon of json.icons) {
+    const resp = await request.get(icon.src);
+    expect(resp.ok()).toBe(true);
+  }
+});
+
 test('user messages align right, agent messages align left', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
