@@ -549,6 +549,16 @@ button:disabled {
 .tool-call .status.completed { border-color: var(--success); color: var(--success); }
 .tool-call .status.failed { border-color: var(--danger); color: var(--danger); }
 
+.tool-call-command {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .tool-call-body {
   padding: var(--space-3);
   font-family: var(--font-mono);

@@ -23,6 +23,7 @@ export interface TrackedToolCall {
   status: ToolCallStatus;
   content: ToolCallContent[];
   locations: ToolCallLocation[];
+  rawInput?: unknown;
 }
 
 export interface TrackedPermission {
@@ -135,6 +136,7 @@ export class Conversation {
           status: update.status,
           content: update.content ?? [],
           locations: update.locations ?? [],
+          rawInput: update.rawInput,
         });
         this.timeline.push({ type: "toolCall", toolCallId: update.toolCallId });
         break;
@@ -156,6 +158,7 @@ export class Conversation {
             ...existing,
             ...(update.title !== undefined && { title: update.title }),
             ...(update.status !== undefined && { status: update.status }),
+            ...(update.rawInput !== undefined && { rawInput: update.rawInput }),
             content: mergedContent,
             locations: mergedLocations,
           });

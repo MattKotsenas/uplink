@@ -140,6 +140,7 @@ async function scenarioToolCall(requestId: number | string): Promise<void> {
     title: "Reading file",
     kind: "read",
     status: "pending",
+    rawInput: { path: "src/index.ts" },
   });
   await delay(50);
   sendPromptUpdate(requestId, {
@@ -167,9 +168,10 @@ async function scenarioFailedToolCall(requestId: number | string): Promise<void>
   sendPromptUpdate(requestId, {
     sessionUpdate: "tool_call",
     toolCallId: "tc-fail",
-    title: "Run powershell command",
+    title: "Get missing file",
     kind: "execute",
     status: "pending",
+    rawInput: { command: "Get-Item missing.txt", description: "Get missing file" },
   });
   await delay(50);
   sendPromptUpdate(requestId, {

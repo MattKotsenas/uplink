@@ -18,6 +18,7 @@ import diff from 'highlight.js/lib/languages/diff';
 import yaml from 'highlight.js/lib/languages/yaml';
 import markdown from 'highlight.js/lib/languages/markdown';
 import csharp from 'highlight.js/lib/languages/csharp';
+import powershell from 'highlight.js/lib/languages/powershell';
 
 hljs.registerLanguage('typescript', typescript);
 hljs.registerLanguage('ts', typescript);
@@ -39,6 +40,8 @@ hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('md', markdown);
 hljs.registerLanguage('csharp', csharp);
 hljs.registerLanguage('cs', csharp);
+hljs.registerLanguage('powershell', powershell);
+hljs.registerLanguage('ps1', powershell);
 
 // ─── Markdown renderer (pure function) ────────────────────────────────
 

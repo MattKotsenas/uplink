@@ -1,5 +1,6 @@
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
+import hljs from 'highlight.js/lib/core';
 import { TrackedToolCall } from '../conversation.js';
 import type { ToolKind, ToolCallContent } from '../../shared/acp-types.js';
 import { Icon } from './icon.js';
@@ -88,12 +89,22 @@ function ThinkingBlock({ tc }: { tc: TrackedToolCall }) {
   );
 }
 
+function extractCommand(rawInput: unknown): string | null {
+  if (rawInput == null || typeof rawInput !== 'object') return null;
+  const obj = rawInput as Record<string, unknown>;
+  // Copilot CLI sends { command: "..." } for powershell/execute tools
+  if (typeof obj.command === 'string') return obj.command;
+  return null;
+}
+
 export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
   const [collapsed, setCollapsed] = useState(true);
 
   if (tc.kind === 'think') {
     return <ThinkingBlock tc={tc} />;
   }
+
+  const command = extractCommand(tc.rawInput);
 
   return (
     <div class="tool-call" data-tool-call-id={tc.toolCallId}>
@@ -105,6 +116,11 @@ export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
         <span class="tool-call-title">{tc.title}</span>
         <span class={`status ${statusClass(tc.status)}`}>{statusLabel(tc.status)}</span>
       </div>
+      {command && (
+        <pre class="tool-call-command"><code
+          dangerouslySetInnerHTML={{ __html: hljs.highlightAuto(command).value }}
+        /></pre>
+      )}
       <div class="tool-call-body" hidden={collapsed}>
         {tc.content.length > 0
           ? <ContentBlock content={tc.content} />
