@@ -11,7 +11,7 @@ import type {
 // ─── Data Models ──────────────────────────────────────────────────────
 
 export interface ConversationMessage {
-  role: "user" | "agent";
+  role: "user" | "agent" | "system";
   content: string;
   timestamp: number;
 }
@@ -87,6 +87,12 @@ export class Conversation {
 
   addUserMessage(text: string): void {
     this.messages.push({ role: "user", content: text, timestamp: Date.now() });
+    this.timeline.push({ type: "message", index: this.messages.length - 1 });
+    this.notify();
+  }
+
+  addSystemMessage(text: string): void {
+    this.messages.push({ role: "system", content: text, timestamp: Date.now() });
     this.timeline.push({ type: "message", index: this.messages.length - 1 });
     this.notify();
   }

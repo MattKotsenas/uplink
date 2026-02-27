@@ -5,6 +5,7 @@ import {
 } from "../shared/acp-types";
 import type {
   AgentCapabilities,
+  AvailableModel,
   ClientCapabilities,
   InitializeResult,
   JsonRpcMessage,
@@ -59,6 +60,7 @@ export interface AcpClientOptions {
   cwd: string;
   onStateChange?: (state: ConnectionState) => void;
   onSessionUpdate?: (update: SessionUpdate) => void;
+  onModelsAvailable?: (models: AvailableModel[]) => void;
   onPermissionRequest?: (
     request: PermissionRequestContext,
     respond: (outcome: PermissionOutcome) => void,
@@ -285,12 +287,16 @@ export class AcpClient {
       }
     }
 
-    const { sessionId } = await this.sendRequest<SessionNewResult>(
+    const result = await this.sendRequest<SessionNewResult>(
       "session/new",
       { cwd: this.options.cwd, mcpServers: [] },
     );
-    this.sessionId = sessionId;
-    localStorage.setItem('uplink-resume-session', sessionId);
+    this.sessionId = result.sessionId;
+    localStorage.setItem('uplink-resume-session', result.sessionId);
+
+    if (result.models?.availableModels) {
+      this.options.onModelsAvailable?.(result.models.availableModels);
+    }
   }
 
   private handleClose(): void {

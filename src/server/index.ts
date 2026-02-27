@@ -279,24 +279,6 @@ export function startServer(options: ServerOptions): ServerResult {
         return;
       }
 
-      if (parsed?.method === 'uplink/set_model') {
-        // Just update the selected model. The client will disconnect and
-        // reconnect with the new model in the URL query string, which
-        // spawns a fresh bridge. No need to spawn one here — doing so
-        // caused a double-spawn where Bridge #1 was immediately killed
-        // when the client disconnected.
-        selectedModel = parsed.params?.model || undefined;
-
-        if (parsed.id !== undefined) {
-          ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            id: parsed.id,
-            result: { model: selectedModel ?? null },
-          }));
-        }
-        return;
-      }
-
       // Track session/new requests to capture the session ID from the response
       if (parsed?.method === 'session/new' && parsed.id != null) {
         pendingSessionNewIds.add(parsed.id);

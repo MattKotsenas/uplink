@@ -106,6 +106,19 @@ export interface SessionNewParams {
 /** Result of the `session/new` request. */
 export interface SessionNewResult {
   sessionId: string;
+  /** Available models and current selection (Copilot CLI extension, not in ACP spec). */
+  models?: {
+    availableModels: AvailableModel[];
+    currentModelId?: string;
+  };
+}
+
+/** A model advertised by the agent. */
+export interface AvailableModel {
+  modelId: string;
+  name: string;
+  description?: string;
+  _meta?: { copilotUsage?: string; copilotEnablement?: string };
 }
 
 // ─── session/load ─────────────────────────────────────────────────────

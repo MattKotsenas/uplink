@@ -28,50 +28,57 @@ test('user messages align right, agent messages align left', async ({ page }) =>
   expect(agentRightGap).toBeGreaterThan(agentLeftGap);
 });
 
-test('dark/light mode toggle', async ({ page }) => {
+test('dark/light mode toggle via /theme command', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   const html = page.locator('html');
-  const slider = page.locator('label[for="theme-toggle"] .toggle-slider');
 
-  // Open hamburger menu to access theme toggle
-  await page.locator('#menu-toggle').click();
-
-  // Get current theme and force to a known state
+  // Get current theme
   const initialTheme = await html.getAttribute('class');
 
-  // Toggle once
-  await slider.click();
-  const toggledTheme = initialTheme === 'dark' ? 'light' : 'dark';
-  await expect(html).toHaveClass(toggledTheme);
+  // Toggle to the opposite theme
+  const targetTheme = initialTheme === 'dark' ? 'light' : 'dark';
+  await page.locator('#prompt-input').fill(`/theme ${targetTheme}`);
+  await page.locator('#send-btn').click();
+
+  await expect(html).toHaveClass(targetTheme);
+
+  // System message should confirm the change
+  const sysMsg = page.locator('.message.system').filter({ hasText: `Theme set to ${targetTheme}` });
+  await expect(sysMsg).toBeVisible({ timeout: 5000 });
 
   // Toggle back
-  await slider.click();
+  await page.locator('#prompt-input').fill(`/theme ${initialTheme}`);
+  await page.locator('#send-btn').click();
   await expect(html).toHaveClass(initialTheme!);
 });
 
-test('toggle icons change with state', async ({ page }) => {
+test('slash command palette appears on / keystroke', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Menu button should use Material Symbols
-  const menuIcon = page.locator('#menu-toggle .material-symbols-outlined');
-  await expect(menuIcon).toBeVisible();
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
 
-  await page.locator('#menu-toggle').click();
+  // Palette should not be visible initially
+  await expect(palette).not.toBeVisible();
 
-  const themeLabel = page.locator('label[for="theme-toggle"]');
-  const themeOff = themeLabel.locator('.toggle-icon-off');
-  const themeOn = themeLabel.locator('.toggle-icon-on');
+  // Type / to trigger palette
+  await input.fill('/');
+  await expect(palette).toBeVisible();
 
-  // Check initial visibility (one shown, other hidden)
-  const offVisible = await themeOff.isVisible();
-  const onVisible = await themeOn.isVisible();
-  expect(offVisible).not.toBe(onVisible); // exactly one is visible
+  // Should show available commands
+  await expect(palette.locator('.command-palette-item')).toHaveCount(7); // 7 commands
 
-  // Toggle and verify icons swap
-  await themeLabel.locator('.toggle-slider').click();
-  await expect(themeOff).toHaveCSS('display', offVisible ? 'none' : 'inline');
-  await expect(themeOn).toHaveCSS('display', onVisible ? 'none' : 'inline');
+  // Type more to filter
+  await input.fill('/mo');
+  await expect(palette.locator('.command-palette-item')).toHaveCount(1);
+  await expect(palette.locator('.command-palette-label')).toContainText('/model');
+
+  // Clear the slash — palette should hide
+  await input.fill('hello');
+  await expect(palette).not.toBeVisible();
 });
 
 test('shell command execution', async ({ page }) => {
@@ -89,61 +96,46 @@ test('shell command execution', async ({ page }) => {
   await expect(shellOutput.locator('.stdout')).toContainText('hello world');
 });
 
-test('chat renders after model change', async ({ page }) => {
+test('/model command is sent as prompt to CLI', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Send a message and verify it renders
-  await page.locator('#prompt-input').fill('hello');
+  // Send /model command — this is a CLI-passthrough command
+  await page.locator('#prompt-input').fill('/model haiku');
   await page.locator('#send-btn').click();
-  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
 
-  // Change model (triggers clearConversation)
-  await page.locator('#menu-toggle').click();
-  await page.locator('#model-select').selectOption('claude-sonnet-4.6');
+  // The user message should show in chat
+  const userMsg = page.locator('.message.user').filter({ hasText: '/model haiku' });
+  await expect(userMsg).toBeVisible({ timeout: 5000 });
 
-  // Wait for reconnection
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
-
-  // Send another message and verify it renders
-  await page.locator('#prompt-input').fill('after model change');
-  await page.locator('#send-btn').click();
-  await expect(page.locator('.message.user')).toBeVisible({ timeout: 10000 });
+  // Agent should respond (mock will echo back)
   await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
 });
 
-test('model change resumes same session', async ({ page }) => {
+test('session is preserved across /model commands', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
-
-  // Intercept localStorage.setItem to capture the resume session ID
-  await page.evaluate(() => {
-    (window as any).__capturedResumeId = null;
-    const origSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function(key: string, value: string) {
-      if (key === 'uplink-resume-session') {
-        (window as any).__capturedResumeId = value;
-      }
-      return origSetItem.call(this, key, value);
-    };
-  });
 
   // Send a message so a session is established
   await page.locator('#prompt-input').fill('hello');
   await page.locator('#send-btn').click();
   await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
 
-  // Change model — should save session for resume
-  await page.locator('#menu-toggle').click();
-  await page.locator('#model-select').selectOption('claude-sonnet-4.6');
+  // Verify session is in localStorage
+  const sessionBefore = await page.evaluate(() =>
+    localStorage.getItem('uplink-resume-session'),
+  );
+  expect(sessionBefore).toBeTruthy();
 
-  // Wait for reconnection
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+  // Send /model command — should NOT disconnect/reconnect
+  await page.locator('#prompt-input').fill('/model sonnet');
+  await page.locator('#send-btn').click();
 
-  // Verify a resume session ID was saved
-  const resumeId = await page.evaluate(() => (window as any).__capturedResumeId);
-  expect(resumeId).toBeTruthy();
-  expect(resumeId).toMatch(/^mock-session-/);
+  // Session should still be the same
+  const sessionAfter = await page.evaluate(() =>
+    localStorage.getItem('uplink-resume-session'),
+  );
+  expect(sessionAfter).toBe(sessionBefore);
 });
 
 test('session is persisted to localStorage for page reload resume', async ({ page }) => {
@@ -215,11 +207,12 @@ test('permission buttons have readable contrast in dark mode', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Ensure dark mode
+  // Ensure dark mode via /theme command
   const html = page.locator('html');
   if ((await html.getAttribute('class')) !== 'dark') {
-    await page.locator('#menu-toggle').click();
-    await page.locator('label[for="theme-toggle"] .toggle-slider').click();
+    await page.locator('#prompt-input').fill('/theme dark');
+    await page.locator('#send-btn').click();
+    await expect(html).toHaveClass('dark');
   }
 
   // Trigger permission dialog
@@ -294,12 +287,13 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Enable yolo mode via menu
-  await page.locator('#menu-toggle').click();
-  await page.locator('label[for="yolo-toggle"] .toggle-slider').click();
+  // Enable yolo mode via /yolo command
+  await page.locator('#prompt-input').fill('/yolo');
+  await page.locator('#send-btn').click();
 
-  // Close menu
-  await page.keyboard.press('Escape');
+  // System message should confirm
+  const sysMsg = page.locator('.message.system').filter({ hasText: 'Auto-approve enabled' });
+  await expect(sysMsg).toBeVisible({ timeout: 5000 });
 
   // Send a permission-triggering message
   const input = page.locator('#prompt-input');
@@ -318,7 +312,7 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
   await expect(pendingAllowBtn).toHaveCount(0);
 });
 
-test('mode selector changes input box border color', async ({ page }) => {
+test('mode changes via slash commands set input box border color', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
@@ -329,10 +323,9 @@ test('mode selector changes input box border color', async ({ page }) => {
   const defaultMode = await html.getAttribute('data-mode');
   expect(defaultMode === null || defaultMode === 'chat').toBe(true);
 
-  // Switch to plan mode
-  await page.locator('#menu-toggle').click();
-  await page.locator('#mode-select').selectOption('plan');
-  await page.keyboard.press('Escape');
+  // Switch to plan mode via /plan command
+  await input.fill('/plan');
+  await page.locator('#send-btn').click();
 
   // Verify data-mode attribute
   await expect(html).toHaveAttribute('data-mode', 'plan');
@@ -343,12 +336,11 @@ test('mode selector changes input box border color', async ({ page }) => {
     (el) => getComputedStyle(el).borderColor,
   );
   // Plan mode should use --info (blue), not --accent (mauve)
-  // In dark mode: --info is #89b4fa, --accent is #cba6f7
   expect(planBorderColor).not.toBe('rgb(203, 166, 247)'); // not mauve
 
-  // Switch back to chat
-  await page.locator('#menu-toggle').click();
-  await page.locator('#mode-select').selectOption('chat');
+  // Switch back to chat via /agent
+  await input.fill('/agent');
+  await page.locator('#send-btn').click();
   await expect(html).toHaveAttribute('data-mode', 'chat');
 });
 
@@ -356,13 +348,16 @@ test('autopilot mode auto-continues and shows green border', async ({ page }) =>
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Switch to autopilot mode
-  await page.locator('#menu-toggle').click();
-  await page.locator('#mode-select').selectOption('autopilot');
-  await page.keyboard.press('Escape');
+  // Switch to autopilot mode via /autopilot command
+  await page.locator('#prompt-input').fill('/autopilot');
+  await page.locator('#send-btn').click();
 
   const html = page.locator('html');
   await expect(html).toHaveAttribute('data-mode', 'autopilot');
+
+  // Wait for the agent response from /autopilot command
+  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   // Verify green border on input
   const input = page.locator('#prompt-input');
@@ -385,17 +380,17 @@ test('autopilot mode auto-continues and shows green border', async ({ page }) =>
   await expect(page.locator('.message.agent').last()).toContainText('Done', { timeout: 10000 });
 });
 
-test('/session command renames the session', async ({ page }) => {
+test('/session rename command renames the session', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   // Send /session rename command
   const input = page.locator('#prompt-input');
-  await input.fill('/session My Test Session');
+  await input.fill('/session rename My Test Session');
   await page.locator('#send-btn').click();
 
-  // Should show a confirmation message in the chat
-  const renameMsg = page.locator('.message.user').filter({ hasText: 'Session renamed to "My Test Session"' });
+  // Should show a system confirmation message
+  const renameMsg = page.locator('.message.system').filter({ hasText: 'Session renamed to "My Test Session"' });
   await expect(renameMsg).toBeVisible({ timeout: 5000 });
 });
 
@@ -554,11 +549,13 @@ test('shell-input border reverts to plan mode if plan was active', async ({ page
   const input = page.locator('#prompt-input');
   const html = page.locator('html');
 
-  // Switch to plan mode first
-  await page.locator('#menu-toggle').click();
-  await page.locator('#mode-select').selectOption('plan');
-  await page.keyboard.press('Escape');
+  // Switch to plan mode via /plan command
+  await input.fill('/plan');
+  await page.locator('#send-btn').click();
   await expect(html).toHaveAttribute('data-mode', 'plan');
+
+  // Wait for agent response to complete
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   // Type ! — should show shell-input
   await input.fill('!echo hello');

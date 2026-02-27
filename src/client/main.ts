@@ -3,18 +3,10 @@ import { Conversation } from './conversation.js';
 import { ChatList } from './ui/chat.js';
 import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js';
 import { fetchSessions, openSessionsModal, SessionsModal } from './ui/sessions.js';
+import { CommandPalette, type PaletteItem } from './ui/command-palette.js';
+import { getCompletions, parseSlashCommand, setAvailableModels } from './slash-commands.js';
 import { render, h } from 'preact';
 import 'material-symbols/outlined.css';
-
-// ─── Constants ────────────────────────────────────────────────────────
-
-const MODELS = [
-  'claude-sonnet-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
-  'claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5',
-  'claude-sonnet-4', 'gemini-3-pro-preview', 'gpt-5.3-codex',
-  'gpt-5.2-codex', 'gpt-5.2', 'gpt-5.1-codex-max', 'gpt-5.1-codex',
-  'gpt-5.1', 'gpt-5.1-codex-mini', 'gpt-5-mini', 'gpt-4.1',
-];
 
 // ─── DOM References ───────────────────────────────────────────────────
 
@@ -22,13 +14,6 @@ const chatArea = document.getElementById('chat-area')!;
 const promptInput = document.getElementById('prompt-input') as HTMLTextAreaElement;
 const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
-const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
-const modeSelect = document.getElementById('mode-select') as HTMLSelectElement;
-const menuToggle = document.getElementById('menu-toggle')!;
-const menuDropdown = document.getElementById('menu-dropdown')!;
-const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement;
-const sessionsBtn = document.getElementById('sessions-btn')!;
-const yoloToggle = document.getElementById('yolo-toggle') as HTMLInputElement;
 
 let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 
@@ -40,73 +25,31 @@ let currentMode: AgentMode = (localStorage.getItem('uplink-mode') as AgentMode) 
 function applyMode(mode: AgentMode): void {
   currentMode = mode;
   document.documentElement.setAttribute('data-mode', mode);
-  modeSelect.value = mode;
   localStorage.setItem('uplink-mode', mode);
 }
 
 applyMode(currentMode);
 
-modeSelect.addEventListener('change', () => {
-  applyMode(modeSelect.value as AgentMode);
-});
-
 // ─── Theme ────────────────────────────────────────────────────────────
+
+function applyTheme(theme: string): void {
+  if (theme === 'auto') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.className = prefersDark ? 'dark' : 'light';
+  } else {
+    document.documentElement.className = theme;
+  }
+  localStorage.setItem('uplink-theme', theme);
+}
 
 function initTheme(): void {
   const saved = localStorage.getItem('uplink-theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = saved ?? (prefersDark ? 'dark' : 'light');
-  document.documentElement.className = theme;
-  themeToggle.checked = theme === 'dark';
+  applyTheme(theme);
 }
 
 initTheme();
-
-// ─── Model Selector ───────────────────────────────────────────────────
-
-function initModelSelector(): void {
-  // "Auto" means no --model flag; Copilot picks its default
-  const autoOption = document.createElement('option');
-  autoOption.value = '';
-  autoOption.textContent = 'Auto';
-  modelSelect.appendChild(autoOption);
-
-  for (const model of MODELS) {
-    const option = document.createElement('option');
-    option.value = model;
-    option.textContent = model;
-    modelSelect.appendChild(option);
-  }
-
-  const saved = localStorage.getItem('uplink-model');
-  if (saved) modelSelect.value = saved;
-}
-
-initModelSelector();
-
-// ─── Hamburger Menu ───────────────────────────────────────────────────
-
-menuToggle.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const isOpen = !menuDropdown.hidden;
-  menuDropdown.hidden = isOpen;
-  menuToggle.setAttribute('aria-expanded', String(!isOpen));
-});
-
-document.addEventListener('click', (e) => {
-  if (!menuDropdown.hidden && !menuDropdown.contains(e.target as Node)) {
-    menuDropdown.hidden = true;
-    menuToggle.setAttribute('aria-expanded', 'false');
-  }
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !menuDropdown.hidden) {
-    menuDropdown.hidden = true;
-    menuToggle.setAttribute('aria-expanded', 'false');
-    menuToggle.focus();
-  }
-});
 
 // ─── Service Worker ───────────────────────────────────────────────────
 
@@ -175,27 +118,17 @@ function updateConnectionStatus(state: ConnectionState): void {
 
 async function initializeClient() {
   const tokenResponse = await fetch('/api/token');
-  const { token, cwd, model: serverModel } = await tokenResponse.json();
+  const { token, cwd } = await tokenResponse.json();
   clientCwd = cwd;
 
-  // Use explicitly saved model, or let Copilot use its default
-  const savedModel = localStorage.getItem('uplink-model');
-  let wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
-  if (savedModel) {
-    wsUrl += `&model=${encodeURIComponent(savedModel)}`;
-  }
-
-  // Update the "Auto" label to show the server's active model if known
-  const autoOption = modelSelect.querySelector('option[value=""]') as HTMLOptionElement;
-  if (autoOption && serverModel) {
-    autoOption.textContent = `Auto (${serverModel})`;
-  }
+  const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
 
   return new AcpClient({
     wsUrl,
     cwd,
     onStateChange: (state) => updateConnectionStatus(state),
     onSessionUpdate: (update) => conversation.handleSessionUpdate(update),
+    onModelsAvailable: (models) => setAvailableModels(models),
     onPermissionRequest: (request, respond) => {
       const autoApproveId = yoloMode
         ? request.options.find(
@@ -225,7 +158,9 @@ sendBtn.addEventListener('click', async () => {
 
   promptInput.value = '';
   promptInput.style.height = 'auto';
+  hidePalette();
 
+  // Shell commands: !<command>
   if (text.startsWith('!')) {
     const command = text.slice(1).trim();
     if (!command) return;
@@ -246,22 +181,17 @@ sendBtn.addEventListener('click', async () => {
     return;
   }
 
-  // /session <name> — rename the current session
-  if (text.startsWith('/session ')) {
-    const name = text.slice('/session '.length).trim();
-    if (!name || !client.currentSessionId) return;
-
-    try {
-      await client.sendRawRequest('uplink/rename_session', {
-        sessionId: client.currentSessionId,
-        summary: name,
-      });
-      conversation.addUserMessage(`Session renamed to "${name}"`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      conversation.addUserMessage(`Failed to rename session: ${msg}`);
+  // Slash commands
+  const parsed = parseSlashCommand(text);
+  if (parsed) {
+    if (parsed.kind === 'client') {
+      handleClientCommand(parsed.command, parsed.arg);
+      return;
     }
-    return;
+    // CLI commands — send as prompt (mode switch commands also update local mode)
+    if (parsed.command === '/agent') applyMode('chat');
+    else if (parsed.command === '/plan') applyMode('plan');
+    else if (parsed.command === '/autopilot') applyMode('autopilot');
   }
 
   conversation.addUserMessage(text);
@@ -289,6 +219,34 @@ cancelBtn.addEventListener('click', () => {
 });
 
 promptInput.addEventListener('keydown', (e) => {
+  // Palette keyboard navigation
+  if (paletteVisible) {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      paletteSelectedIndex = Math.max(0, paletteSelectedIndex - 1);
+      renderPalette();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      paletteSelectedIndex = Math.min(paletteItems.length - 1, paletteSelectedIndex + 1);
+      renderPalette();
+      return;
+    }
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      e.preventDefault();
+      if (paletteItems[paletteSelectedIndex]) {
+        acceptCompletion(paletteItems[paletteSelectedIndex]);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      hidePalette();
+      return;
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendBtn.click();
@@ -308,96 +266,142 @@ promptInput.addEventListener('input', () => {
   } else {
     document.documentElement.setAttribute('data-mode', currentMode);
   }
-});
 
-// ─── Theme Toggle ─────────────────────────────────────────────────────
-
-themeToggle.addEventListener('change', () => {
-  const next = themeToggle.checked ? 'dark' : 'light';
-  document.documentElement.className = next;
-  localStorage.setItem('uplink-theme', next);
-});
-
-// ─── Yolo Mode ────────────────────────────────────────────────────────
-
-yoloToggle.checked = yoloMode;
-
-yoloToggle.addEventListener('change', () => {
-  yoloMode = yoloToggle.checked;
-  localStorage.setItem('uplink-yolo', String(yoloMode));
-});
-
-// ─── Model Change ─────────────────────────────────────────────────────
-
-modelSelect.addEventListener('change', async () => {
-  const value = modelSelect.value;
-  if (value) {
-    localStorage.setItem('uplink-model', value);
+  // Show/update command palette when typing /
+  if (promptInput.value.startsWith('/')) {
+    showPalette();
   } else {
-    localStorage.removeItem('uplink-model');
-  }
-
-  if (!client) return;
-
-  // Model change requires restarting the copilot process, which starts a new session.
-  // Save the current session so the new client can resume it via session/load.
-  try {
-    await client.sendRawRequest('uplink/set_model', { model: value || undefined });
-  } catch {
-    // Best-effort
-  }
-
-  const resumeSessionId = client.currentSessionId;
-  if (resumeSessionId) {
-    localStorage.setItem('uplink-resume-session', resumeSessionId);
-  }
-
-  // Tear down old client and create a new one with updated URL
-  clearConversation();
-  client.disconnect();
-  try {
-    client = await initializeClient();
-    client.connect().catch((err) => {
-      console.error('Failed to connect after model change:', err);
-    });
-  } catch (err) {
-    console.error('Failed to reinitialize after model change:', err);
+    hidePalette();
   }
 });
 
-// ─── Sessions ─────────────────────────────────────────────────────────
+// ─── Command Palette ──────────────────────────────────────────────────
 
-sessionsBtn.addEventListener('click', async () => {
-  if (!client || !clientCwd) return;
-  menuDropdown.hidden = true;
+const paletteMount = document.getElementById('palette-mount')!;
+let paletteItems: PaletteItem[] = [];
+let paletteSelectedIndex = 0;
+let paletteVisible = false;
 
-  const sessions = await fetchSessions(clientCwd);
-  openSessionsModal(
-    sessions,
-    client.supportsLoadSession,
-    async (sessionId) => {
-      clearConversation();
-      try {
-        await client!.loadSession(sessionId);
-      } catch (err) {
-        console.error('Failed to load session:', err);
-      }
-    },
-    async () => {
-      clearConversation();
-      localStorage.removeItem('uplink-resume-session');
-      client!.disconnect();
-      try {
-        client = await initializeClient();
-        client.connect().catch((err) => {
-          console.error('Failed to create new session:', err);
-        });
-      } catch (err) {
-        console.error('Failed to reinitialize for new session:', err);
-      }
-    },
+function renderPalette(): void {
+  if (!paletteVisible || paletteItems.length === 0) {
+    render(null, paletteMount);
+    return;
+  }
+  render(
+    h(CommandPalette, {
+      items: paletteItems,
+      selectedIndex: paletteSelectedIndex,
+      onSelect: (item) => acceptCompletion(item),
+      onHover: (i) => { paletteSelectedIndex = i; renderPalette(); },
+    }),
+    paletteMount,
   );
-});
+}
+
+function showPalette(): void {
+  const text = promptInput.value;
+  paletteItems = getCompletions(text);
+  paletteSelectedIndex = 0;
+  paletteVisible = paletteItems.length > 0;
+  renderPalette();
+}
+
+function hidePalette(): void {
+  paletteVisible = false;
+  renderPalette();
+}
+
+function acceptCompletion(item: PaletteItem): void {
+  promptInput.value = item.fill;
+  hidePalette();
+  promptInput.focus();
+  // If the fill is a complete command (no trailing space), execute it
+  const parsed = parseSlashCommand(item.fill);
+  if (parsed && parsed.complete) {
+    sendBtn.click();
+  }
+}
+
+// ─── Slash Command Handlers ───────────────────────────────────────────
+
+function handleClientCommand(command: string, arg: string): void {
+  switch (command) {
+    case '/theme':
+      applyTheme(arg || 'auto');
+      conversation.addSystemMessage(`Theme set to ${arg || 'auto'}`);
+      break;
+    case '/yolo': {
+      const on = arg === '' || arg === 'on';
+      yoloMode = on;
+      localStorage.setItem('uplink-yolo', String(yoloMode));
+      conversation.addSystemMessage(`Auto-approve ${yoloMode ? 'enabled' : 'disabled'}`);
+      break;
+    }
+    case '/session':
+      handleSessionCommand(arg);
+      break;
+  }
+}
+
+async function handleSessionCommand(arg: string): Promise<void> {
+  if (!client || !clientCwd) return;
+
+  if (arg === 'create' || arg === 'new') {
+    clearConversation();
+    localStorage.removeItem('uplink-resume-session');
+    client.disconnect();
+    try {
+      client = await initializeClient();
+      client.connect().catch(console.error);
+    } catch (err) {
+      console.error('Failed to create new session:', err);
+    }
+    return;
+  }
+
+  if (arg.startsWith('rename ')) {
+    const name = arg.slice(7).trim();
+    if (!name || !client.currentSessionId) return;
+    try {
+      await client.sendRawRequest('uplink/rename_session', {
+        sessionId: client.currentSessionId,
+        summary: name,
+      });
+      conversation.addSystemMessage(`Session renamed to "${name}"`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      conversation.addSystemMessage(`Failed to rename: ${msg}`);
+    }
+    return;
+  }
+
+  if (arg === 'list' || arg === '') {
+    const sessions = await fetchSessions(clientCwd);
+    openSessionsModal(
+      sessions,
+      client.supportsLoadSession,
+      async (sessionId) => {
+        clearConversation();
+        try {
+          await client!.loadSession(sessionId);
+        } catch (err) {
+          console.error('Failed to load session:', err);
+        }
+      },
+      async () => {
+        clearConversation();
+        localStorage.removeItem('uplink-resume-session');
+        client!.disconnect();
+        try {
+          client = await initializeClient();
+          client.connect().catch(console.error);
+        } catch (err) {
+          console.error('Failed to create new session:', err);
+        }
+      },
+    );
+  }
+}
 
 // ─── Connect ──────────────────────────────────────────────────────────
 
