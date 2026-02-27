@@ -46,9 +46,9 @@ export const commands: SlashCommand[] = [
     kind: 'cli',
     getOptions: () => availableModels,
   },
-  { name: 'agent', description: 'Default agent mode', kind: 'cli' },
-  { name: 'plan', description: 'Plan mode', kind: 'cli' },
-  { name: 'autopilot', description: 'Autonomous mode', kind: 'cli' },
+  { name: 'agent', description: 'Default agent mode', kind: 'client' },
+  { name: 'plan', description: 'Plan mode', kind: 'client' },
+  { name: 'autopilot', description: 'Autonomous mode', kind: 'client' },
   {
     name: 'theme',
     description: 'Set color theme',

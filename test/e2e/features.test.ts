@@ -371,16 +371,16 @@ test('autopilot mode auto-continues and shows green border', async ({ page }) =>
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Switch to autopilot mode via /autopilot command
+  // Switch to autopilot mode via /autopilot command (client-side)
   await page.locator('#prompt-input').fill('/autopilot');
   await page.locator('#send-btn').click();
 
   const html = page.locator('html');
   await expect(html).toHaveAttribute('data-mode', 'autopilot');
 
-  // Wait for the agent response from /autopilot command
-  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+  // System message should confirm mode switch
+  const sysMsg = page.locator('.message.system').filter({ hasText: 'Switched to autopilot mode' });
+  await expect(sysMsg).toBeVisible({ timeout: 5000 });
 
   // Verify green border on input
   const input = page.locator('#prompt-input');
@@ -576,9 +576,6 @@ test('shell-input border reverts to plan mode if plan was active', async ({ page
   await input.fill('/plan');
   await page.locator('#send-btn').click();
   await expect(html).toHaveAttribute('data-mode', 'plan');
-
-  // Wait for agent response to complete
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   // Type ! — should show shell-input
   await input.fill('!echo hello');

@@ -182,31 +182,37 @@ sendBtn.addEventListener('click', async () => {
   }
 
   // Slash commands
+  let promptText = text;
   const parsed = parseSlashCommand(text);
   if (parsed) {
     if (parsed.kind === 'client') {
-      handleClientCommand(parsed.command, parsed.arg);
-      return;
+      const remainingPrompt = handleClientCommand(parsed.command, parsed.arg);
+      if (!remainingPrompt) return;
+      // Mode command with a prompt — send the prompt portion
+      promptText = remainingPrompt;
     }
-    // CLI commands — send as prompt (mode switch commands also update local mode)
-    if (parsed.command === '/agent') applyMode('chat');
-    else if (parsed.command === '/plan') applyMode('plan');
-    else if (parsed.command === '/autopilot') applyMode('autopilot');
   }
 
   conversation.addUserMessage(text);
 
   // In plan mode, prefix the message to instruct the agent to plan
-  const promptText = currentMode === 'plan' && !text.startsWith('/')
-    ? `/plan ${text}`
-    : text;
+  if (currentMode === 'plan' && !text.startsWith('/')) {
+    promptText = `/plan ${promptText}`;
+  }
+
+  const MAX_AUTOPILOT_TURNS = 25;
 
   try {
     let stopReason = await client.prompt(promptText);
     // In autopilot mode, auto-continue when the agent ends its turn
-    while (currentMode === 'autopilot' && stopReason === 'end_turn') {
+    let turns = 0;
+    while (currentMode === 'autopilot' && stopReason === 'end_turn' && turns < MAX_AUTOPILOT_TURNS) {
+      turns++;
       conversation.addUserMessage('continue');
       stopReason = await client.prompt('continue');
+    }
+    if (turns >= MAX_AUTOPILOT_TURNS) {
+      conversation.addSystemMessage('Autopilot stopped: reached maximum turns');
     }
   } catch (err) {
     console.error('Prompt error:', err);
@@ -314,38 +320,49 @@ function hidePalette(): void {
 function acceptCompletion(item: PaletteItem): void {
   promptInput.value = item.fill;
   promptInput.focus();
-  // If the fill is a complete command (no trailing space), execute it
-  const parsed = parseSlashCommand(item.fill);
-  if (parsed && parsed.complete) {
-    hidePalette();
-    sendBtn.click();
-  } else if (item.fill.endsWith(' ')) {
-    // Command accepted but needs a sub-option — refresh the palette
+  if (item.fill.endsWith(' ')) {
+    // Top-level command selected — show sub-options or let user type more
     showPalette();
   } else {
+    // Concrete sub-option selected — execute
     hidePalette();
+    sendBtn.click();
   }
 }
 
 // ─── Slash Command Handlers ───────────────────────────────────────────
 
-function handleClientCommand(command: string, arg: string): void {
+/** Handle a client-side command. Returns a remaining prompt to send, or undefined. */
+function handleClientCommand(command: string, arg: string): string | undefined {
   switch (command) {
     case '/theme':
       applyTheme(arg || 'auto');
       conversation.addSystemMessage(`Theme set to ${arg || 'auto'}`);
-      break;
+      return undefined;
     case '/yolo': {
       const on = arg === '' || arg === 'on';
       yoloMode = on;
       localStorage.setItem('uplink-yolo', String(yoloMode));
       conversation.addSystemMessage(`Auto-approve ${yoloMode ? 'enabled' : 'disabled'}`);
-      break;
+      return undefined;
     }
     case '/session':
       handleSessionCommand(arg);
-      break;
+      return undefined;
+    case '/agent':
+      applyMode('chat');
+      conversation.addSystemMessage('Switched to agent mode');
+      return arg || undefined;
+    case '/plan':
+      applyMode('plan');
+      conversation.addSystemMessage('Switched to plan mode');
+      return arg || undefined;
+    case '/autopilot':
+      applyMode('autopilot');
+      conversation.addSystemMessage('Switched to autopilot mode');
+      return arg || undefined;
   }
+  return undefined;
 }
 
 async function handleSessionCommand(arg: string): Promise<void> {

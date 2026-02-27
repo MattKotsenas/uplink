@@ -58,6 +58,38 @@ describe('slash-commands', () => {
     });
   });
 
+  describe('mode commands are client-side', () => {
+    it('/agent is a client command', () => {
+      const cmd = commands.find((c) => c.name === 'agent');
+      expect(cmd!.kind).toBe('client');
+    });
+
+    it('/plan is a client command', () => {
+      const cmd = commands.find((c) => c.name === 'plan');
+      expect(cmd!.kind).toBe('client');
+    });
+
+    it('/autopilot is a client command', () => {
+      const cmd = commands.find((c) => c.name === 'autopilot');
+      expect(cmd!.kind).toBe('client');
+    });
+
+    it('/autopilot parses as client kind', () => {
+      const parsed = parseSlashCommand('/autopilot');
+      expect(parsed).toBeDefined();
+      expect(parsed!.kind).toBe('client');
+      expect(parsed!.command).toBe('/autopilot');
+      expect(parsed!.arg).toBe('');
+    });
+
+    it('/autopilot fix the bug has remaining arg', () => {
+      const parsed = parseSlashCommand('/autopilot fix the bug');
+      expect(parsed).toBeDefined();
+      expect(parsed!.kind).toBe('client');
+      expect(parsed!.arg).toBe('fix the bug');
+    });
+  });
+
   describe('getCompletions shows sub-options after command selection', () => {
     it('shows sub-options for "/session "', () => {
       const items = getCompletions('/session ');
