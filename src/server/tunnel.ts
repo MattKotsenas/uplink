@@ -1,9 +1,65 @@
-import { ChildProcess, spawn } from 'node:child_process';
+import { ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const URL_REGEX = /(https:\/\/[^\s,]+devtunnels\.ms[^\s,]*)/i;
 const BUFFER_LIMIT = 4096;
 const URL_TIMEOUT_MS = 30_000;
 const FORCE_KILL_DELAY_MS = 5_000;
+
+// ─── Tunnel name hashing ──────────────────────────────────────────────
+
+export function hashCwd(cwd: string): string {
+  const hash = createHash('sha256').update(cwd).digest('hex').slice(0, 8);
+  return `uplink-${hash}`;
+}
+
+// ─── devtunnel CLI helpers ────────────────────────────────────────────
+
+interface TunnelInfo {
+  exists: boolean;
+  port?: number;
+}
+
+export function getTunnelInfo(tunnelName: string): TunnelInfo {
+  try {
+    const output = execFileSync('devtunnel', ['show', tunnelName, '--json'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10_000,
+    });
+    const data = JSON.parse(output);
+    const port = data?.tunnel?.ports?.[0]?.portNumber as number | undefined;
+    return { exists: true, port };
+  } catch {
+    return { exists: false };
+  }
+}
+
+export function createTunnel(tunnelName: string, port: number): void {
+  execFileSync('devtunnel', ['create', tunnelName], {
+    stdio: 'ignore',
+    timeout: 10_000,
+  });
+  execFileSync('devtunnel', ['port', 'create', tunnelName, '-p', String(port)], {
+    stdio: 'ignore',
+    timeout: 10_000,
+  });
+}
+
+export function updateTunnelPort(tunnelName: string, oldPort: number, newPort: number): void {
+  try {
+    execFileSync('devtunnel', ['port', 'delete', tunnelName, '-p', String(oldPort)], {
+      stdio: 'ignore',
+      timeout: 10_000,
+    });
+  } catch {
+    // Port may not exist — ignore
+  }
+  execFileSync('devtunnel', ['port', 'create', tunnelName, '-p', String(newPort)], {
+    stdio: 'ignore',
+    timeout: 10_000,
+  });
+}
 export function getDevTunnelNotFoundMessage(): string {
   switch (process.platform) {
     case 'darwin':

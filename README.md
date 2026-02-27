@@ -79,21 +79,15 @@ devtunnel user login
    ```bash
    npx @mattkotsenas/uplink@latest --tunnel
    ```
-2. **Scan the QR code**printed in your terminal with your phone's camera.
+2. **Scan the QR code** printed in your terminal with your phone's camera.
 3. **Add to Home Screen** — your browser will offer an "Install" or "Add to Home Screen" prompt because the app ships a
    Web App Manifest and Service Worker.
-4. **(Optional) Use a persistent tunnel** so the URL stays the same across restarts:
-   ```bash
-   # One-time setup
-   devtunnel create my-uplink
-   devtunnel port create my-uplink -p 3000
 
-   # Reuse every time
-   npx @mattkotsenas/uplink@latest --tunnel-id my-uplink
-   ```
+The tunnel URL is **stable per project** — Uplink derives a deterministic tunnel name from your working directory and
+reuses it on every run. The installed PWA always connects to the same URL. If the bridge is offline the cached app shell
+still opens instantly; it shows a reconnection banner and retries automatically.
 
-With a persistent tunnel the installed PWA always connects to the same URL. If the bridge is offline the cached app
-shell still opens instantly; it shows a reconnection banner and retries automatically.
+> **Tip:** Use `--tunnel-id <name>` if you need explicit control over the tunnel name (e.g., sharing across machines).
 
 ## CLI Reference
 
@@ -103,10 +97,11 @@ npx @mattkotsenas/uplink@latest [options]
 
 | Flag | Description | Default |
 |---|---|---|
-| `--port <n>` | Port for the bridge server | `3000` |
-| `--tunnel` | Start a devtunnel for remote access | off |
+| `--port <n>` | Port for the bridge server | random |
+| `--tunnel` | Start a devtunnel for remote access (auto-persistent per project) | off |
 | `--no-tunnel` | Explicitly disable tunnel | — |
-| `--tunnel-id <name>` | Use a persistent devtunnel (implies `--tunnel`) | — |
+| `--tunnel-id <name>` | Use a specific devtunnel name (implies `--tunnel`) | — |
+| `--allow-anonymous` | Allow anonymous tunnel access (no GitHub auth) | off |
 | `--cwd <path>` | Working directory for the Copilot subprocess | current dir |
 | `--help` | Show help and exit | — |
 
