@@ -126,11 +126,11 @@ body, html {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh; /* Dynamic viewport height for mobile */
-  max-width: 800px;
-  margin: 0 auto;
-  position: relative;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: max(0px, calc(50% - 400px));
+  right: max(0px, calc(50% - 400px));
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
@@ -815,10 +815,6 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10
 
 /* Mobile Responsive */
 @media (width <= 600px) {
-  #app {
-    max-width: 100%;
-  }
-  
   .message {
     max-width: 90%;
   }
