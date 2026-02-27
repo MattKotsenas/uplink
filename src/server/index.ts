@@ -121,7 +121,13 @@ export function startServer(options: ServerOptions): ServerResult {
   
   // Serve static files if configured
   if (options.staticDir) {
-    app.use(express.static(options.staticDir));
+    app.use(express.static(options.staticDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('manifest.json')) {
+          res.setHeader('Content-Type', 'application/manifest+json');
+        }
+      },
+    }));
     // SPA fallback: serve index.html for unknown routes
     app.get('*', (req, res) => {
       if (options.staticDir) {
