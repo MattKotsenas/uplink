@@ -459,6 +459,8 @@ async function handleSessionCommand(arg: string): Promise<void> {
 
 // ─── Connect ──────────────────────────────────────────────────────────
 
+updateConnectionStatus('disconnected');
+
 initializeClient().then((c) => {
   client = c;
   client.connect();
