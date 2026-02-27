@@ -395,7 +395,7 @@ body, html {
   border-radius: var(--radius-lg);
   max-width: 85%;
   line-height: 1.5;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .message:has(.content:empty) {
@@ -1038,7 +1038,7 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgba(210, 15, 57, 
   color: inherit;
   font-size: inherit;
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .shell-output .stderr {
