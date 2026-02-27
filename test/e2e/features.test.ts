@@ -149,6 +149,21 @@ test('model label shows current model on the input border', async ({ page }) => 
   await expect(label).toContainText('Claude Haiku 4.5');
 });
 
+test('input textarea and send button bottom-align', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const inputBottom = await page.locator('#prompt-input').evaluate(
+    (el) => el.getBoundingClientRect().bottom,
+  );
+  const btnBottom = await page.locator('#send-btn').evaluate(
+    (el) => el.getBoundingClientRect().bottom,
+  );
+
+  // Bottom edges should be within 1px of each other
+  expect(Math.abs(inputBottom - btnBottom)).toBeLessThanOrEqual(1);
+});
+
 test('shell command execution', async ({ page }) => {
   await page.goto('/');
 
