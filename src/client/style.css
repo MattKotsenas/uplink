@@ -500,12 +500,12 @@ pre code {
 button {
   background-color: var(--accent);
   color: var(--bg-primary);
-  border: none;
+  border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0 1rem;
+  padding: 0.75rem 1rem;
   font-weight: 600;
   font-size: 0.9rem;
-  height: 44px; /* Touch target size */
+  line-height: 1.5;
   cursor: pointer;
   transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
   white-space: nowrap;

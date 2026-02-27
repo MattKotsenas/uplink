@@ -382,3 +382,27 @@ test('/session command renames the session', async ({ page }) => {
   const renameMsg = page.locator('.message.user').filter({ hasText: 'Session renamed to "My Test Session"' });
   await expect(renameMsg).toBeVisible({ timeout: 5000 });
 });
+
+test('input, send button, and cancel button have matching heights', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const sendBtn = page.locator('#send-btn');
+
+  const inputBox = await input.boundingBox();
+  const sendBox = await sendBtn.boundingBox();
+  expect(inputBox).not.toBeNull();
+  expect(sendBox).not.toBeNull();
+  expect(inputBox!.height).toBeCloseTo(sendBox!.height, 0);
+
+  // Trigger a prompt to make the cancel button appear
+  await input.fill('hello');
+  await page.locator('#send-btn').click();
+  const cancelBtn = page.locator('#cancel-btn');
+  await expect(cancelBtn).toBeVisible({ timeout: 5000 });
+
+  const cancelBox = await cancelBtn.boundingBox();
+  expect(cancelBox).not.toBeNull();
+  expect(cancelBox!.height).toBeCloseTo(sendBox!.height, 0);
+});
