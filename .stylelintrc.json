@@ -15,7 +15,6 @@
     "value-keyword-case": null,
     "no-descending-specificity": null,
     "selector-id-pattern": null,
-    "custom-property-pattern": null,
     "selector-class-pattern": null,
     "declaration-block-no-redundant-longhand-properties": null,
     "alpha-value-notation": null,
