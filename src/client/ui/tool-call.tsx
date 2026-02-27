@@ -6,6 +6,11 @@ import { Icon } from './icon.js';
 
 // ─── Pure helpers ─────────────────────────────────────────────────────
 
+/** Map wire status to kebab-case CSS class */
+function statusClass(status: string): string {
+  return status.replace(/_/g, '-');
+}
+
 function getKindIcon(kind: ToolKind): string {
   switch (kind) {
     case 'read': return 'description';
@@ -69,7 +74,7 @@ function ThinkingBlock({ tc }: { tc: TrackedToolCall }) {
         <span class="tool-call-title">
           {tc.status === 'completed' ? 'Thought' : 'Thinking…'}
         </span>
-        <span class={`status ${tc.status}`}>{tc.status}</span>
+        <span class={`status ${statusClass(tc.status)}`}>{tc.status}</span>
       </summary>
       <div class="tool-call-body thinking-body">
         {tc.content.length > 0 && <ContentBlock content={tc.content} />}
@@ -93,7 +98,7 @@ export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
       >
         <Icon name={getKindIcon(tc.kind)} class="kind-icon" />
         <span class="tool-call-title">{tc.title}</span>
-        <span class={`status ${tc.status}`}>{tc.status}</span>
+        <span class={`status ${statusClass(tc.status)}`}>{tc.status}</span>
       </div>
       <div class="tool-call-body" hidden={collapsed}>
         {tc.content.length > 0

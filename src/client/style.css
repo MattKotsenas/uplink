@@ -616,7 +616,7 @@ button:disabled {
 }
 
 .tool-call .status.pending { border-color: var(--warning); color: var(--warning); }
-.tool-call .status.in_progress { border-color: var(--info); color: var(--info); }
+.tool-call .status.in-progress { border-color: var(--info); color: var(--info); }
 .tool-call .status.completed { border-color: var(--success); color: var(--success); }
 .tool-call .status.failed { border-color: var(--danger); color: var(--danger); }
 
@@ -812,6 +812,7 @@ button:disabled {
 }
 
 /* Syntax Highlighting — Catppuccin Mocha */
+/* stylelint-disable selector-class-pattern -- hljs class names are from highlight.js */
 .hljs {
   background: transparent !important;
   padding: 0 !important;
@@ -871,6 +872,7 @@ html.light .hljs-meta { color: #179299; }
 
 html.light .hljs-addition { color: #40a02b; background-color: rgb(64 160 43 / 10%); }
 html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10%); }
+/* stylelint-enable selector-class-pattern */
 
 /* Mobile Responsive */
 @media (width <= 600px) {

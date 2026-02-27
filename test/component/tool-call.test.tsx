@@ -42,6 +42,8 @@ describe('ToolCallCard', () => {
     const details = container.querySelector('details.tool-call-thinking');
     expect(details).toBeTruthy();
     expect(container.querySelector('.tool-call-title')!.textContent).toBe('Thinking…');
+    // Status class should be kebab-case, not snake_case
+    expect(container.querySelector('.status.in-progress')).toBeTruthy();
   });
 
   it('thinking shows "Thought" when completed', () => {
