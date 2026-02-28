@@ -26,6 +26,7 @@ export default defineConfig({
           name: "component",
           environment: "jsdom",
           include: ["test/component/**/*.test.tsx"],
+          pool: "threads",
         },
       },
     ],

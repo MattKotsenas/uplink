@@ -601,6 +601,48 @@ describe('Session listing and rename', () => {
   );
 });
 
+// ── HTTP route tests ────────────────────────────────────────────────
+describe('HTTP routes', () => {
+  it('serves API token endpoint', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/token`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.token).toBe(sessionToken);
+  });
+
+  it('returns 404 for unknown routes when no static dir', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/some/deep/path`);
+    expect(res.status).toBe(404);
+  });
+
+  it('SPA fallback serves index.html for deep paths when static dir is set', async () => {
+    // Create a temporary server with staticDir pointing to dist/client
+    const path = await import('node:path');
+    const fs = await import('node:fs');
+    const staticDir = path.resolve('dist/client');
+    if (!fs.existsSync(path.join(staticDir, 'index.html'))) return; // skip if not built
+
+    const spaResult = startServer({
+      port: 0,
+      staticDir,
+      copilotCommand: COPILOT_COMMAND,
+      copilotArgs: COPILOT_ARGS,
+    });
+    const spaServer = spaResult.server;
+    await new Promise<void>((r) => spaServer.listen(0, '127.0.0.1', () => r()));
+    const spaPort = (spaServer.address() as AddressInfo).port;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${spaPort}/some/deep/path`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+    } finally {
+      spaResult.close();
+      await new Promise<void>((r, j) => spaServer.close((e) => (e ? j(e) : r())));
+    }
+  }, TEST_TIMEOUT);
+});
+
 // ── Eager initialize tests ───────────────────────────────────────────
 describe('Eager initialize', () => {
   it(

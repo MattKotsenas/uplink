@@ -157,7 +157,7 @@ export function startServer(options: ServerOptions): ServerResult {
       },
     }));
     // SPA fallback: serve index.html for unknown routes
-    app.get('*', (req, res) => {
+    app.get('/{*path}', (req, res) => {
       if (options.staticDir) {
         res.sendFile(path.join(options.staticDir, 'index.html'));
       } else {
