@@ -141,9 +141,73 @@ export function startServer(options: ServerOptions): ServerResult {
   const server = createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  // Track the active bridge and socket
+  // Track the active bridge, socket, and cached initialize response
   let activeBridge: Bridge | null = null;
   let activeSocket: WebSocket | null = null;
+  let cachedInitializeResponse: string | null = null;
+
+  // Resolve bridge command and args once (same for all connections)
+  let bridgeCommand: string;
+  let bridgeArgs: string[];
+  const envCommand = !options.copilotCommand ? process.env.COPILOT_COMMAND : undefined;
+  if (envCommand) {
+    const parts = envCommand.split(' ');
+    bridgeCommand = parts[0];
+    bridgeArgs = parts.slice(1);
+  } else {
+    bridgeCommand = options.copilotCommand ?? 'copilot';
+    bridgeArgs = options.copilotArgs ?? ['--acp', '--stdio'];
+  }
+  const bridgeEnvObj: Record<string, string | undefined> = {};
+  const skillsDirs = process.env.COPILOT_SKILLS_DIRS ?? discoverPluginSkillsDirs();
+  if (skillsDirs) {
+    bridgeEnvObj.COPILOT_SKILLS_DIRS = skillsDirs;
+  }
+  const bridgeOptions: BridgeOptions = {
+    command: bridgeCommand,
+    args: bridgeArgs,
+    cwd: resolvedCwd,
+    env: Object.keys(bridgeEnvObj).length > 0 ? bridgeEnvObj : undefined,
+  };
+
+  function ensureBridge(): Bridge {
+    if (activeBridge?.isAlive()) {
+      console.log('Reusing existing bridge');
+      return activeBridge;
+    }
+
+    // Clean up dead bridge state
+    cachedInitializeResponse = null;
+
+    console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
+    const spawnStart = Date.now();
+    const bridge = new Bridge(bridgeOptions);
+    activeBridge = bridge;
+
+    bridge.spawn();
+    console.log(`[timing] bridge spawn: ${Date.now() - spawnStart}ms`);
+
+    // When bridge dies on its own, clean up
+    bridge.onClose((code) => {
+      console.log(`Bridge closed with code ${code}`);
+      if (activeSocket?.readyState === WebSocket.OPEN) {
+        activeSocket.close(1000, 'Bridge closed');
+      }
+      if (activeBridge === bridge) {
+        activeBridge = null;
+        cachedInitializeResponse = null;
+      }
+    });
+
+    bridge.onError((err) => {
+      console.error('Bridge error:', err);
+      if (activeSocket?.readyState === WebSocket.OPEN) {
+        activeSocket.close(1011, 'Bridge error');
+      }
+    });
+
+    return bridge;
+  }
 
   wss.on('connection', (ws, request) => {
     // Validate session token
@@ -154,76 +218,45 @@ export function startServer(options: ServerOptions): ServerResult {
       return;
     }
 
-    // Enforce single connection
+    // Enforce single connection (close old socket, but DON'T kill bridge)
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       console.log('New connection replacing existing one');
       activeSocket.close();
-      if (activeBridge) {
-        activeBridge.kill();
-        activeBridge = null;
-      }
     }
 
     console.log('Client connected');
     activeSocket = ws;
 
-    // Determine command and args
-    let command: string;
-    let args: string[];
-
-    const envCommand = !options.copilotCommand ? process.env.COPILOT_COMMAND : undefined;
-    if (envCommand) {
-      const parts = envCommand.split(' ');
-      command = parts[0];
-      args = parts.slice(1);
-    } else {
-      command = options.copilotCommand ?? 'copilot';
-      args = options.copilotArgs ?? ['--acp', '--stdio'];
-    }
-
-    // Discover plugin skills for copilot ACP mode
-    const bridgeEnv: Record<string, string | undefined> = {};
-    const skillsDirs = process.env.COPILOT_SKILLS_DIRS ?? discoverPluginSkillsDirs();
-    if (skillsDirs) {
-      bridgeEnv.COPILOT_SKILLS_DIRS = skillsDirs;
-    }
-
-    const bridgeOptions: BridgeOptions = {
-      command,
-      args,
-      cwd: resolvedCwd,
-      env: Object.keys(bridgeEnv).length > 0 ? bridgeEnv : undefined,
-    };
-
-    console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
-
-    const spawnStart = Date.now();
-    let bridge = new Bridge(bridgeOptions);
-    activeBridge = bridge;
-
+    let bridge: Bridge;
     try {
-      bridge.spawn();
-      console.log(`[timing] bridge spawn: ${Date.now() - spawnStart}ms`);
+      bridge = ensureBridge();
     } catch (err) {
       console.error('Failed to spawn bridge:', err);
       ws.close(1011, 'Failed to spawn bridge');
       return;
     }
 
-    // Track pending session/new request IDs to capture session creation
+    // Track pending initialize and session/new request IDs
+    const pendingInitializeIds = new Set<number | string>();
     const pendingSessionNewIds = new Set<number | string>();
 
-    // Bridge -> WebSocket (intercept session/new responses)
+    // Bridge -> WebSocket (intercept initialize and session/new responses)
     bridge.onMessage((line) => {
       if (ws.readyState !== WebSocket.OPEN) return;
 
-      // Check if this is a response to a session/new request
-      if (pendingSessionNewIds.size > 0) {
+      // Check if this is a response we need to intercept
+      if (pendingInitializeIds.size > 0 || pendingSessionNewIds.size > 0) {
         try {
           const msg = JSON.parse(line);
-          if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
-            pendingSessionNewIds.delete(msg.id);
-            recordSession(resolvedCwd, msg.result.sessionId);
+          if (msg.id != null) {
+            if (pendingInitializeIds.has(msg.id) && msg.result) {
+              pendingInitializeIds.delete(msg.id);
+              cachedInitializeResponse = JSON.stringify(msg.result);
+            }
+            if (pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
+              pendingSessionNewIds.delete(msg.id);
+              recordSession(resolvedCwd, msg.result.sessionId);
+            }
           }
         } catch {
           // Not valid JSON — ignore
@@ -231,23 +264,6 @@ export function startServer(options: ServerOptions): ServerResult {
       }
 
       ws.send(line);
-    });
-
-    bridge.onError((err) => {
-      console.error('Bridge error:', err);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close(1011, 'Bridge error');
-      }
-    });
-
-    bridge.onClose((code) => {
-      console.log(`Bridge closed with code ${code}`);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close(1000, 'Bridge closed');
-      }
-      if (activeBridge === bridge) {
-        activeBridge = null;
-      }
     });
 
     // WebSocket -> Bridge (with uplink-specific message interception)
@@ -276,6 +292,16 @@ export function startServer(options: ServerOptions): ServerResult {
         return;
       }
 
+      // Intercept initialize — replay cached response if bridge is reused
+      if (parsed?.method === 'initialize' && parsed.id != null) {
+        if (cachedInitializeResponse) {
+          console.log('[timing] initialize: cached (0ms)');
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(cachedInitializeResponse) }));
+          return;
+        }
+        pendingInitializeIds.add(parsed.id);
+      }
+
       // Track session/new requests to capture the session ID from the response
       if (parsed?.method === 'session/new' && parsed.id != null) {
         pendingSessionNewIds.add(parsed.id);
@@ -291,10 +317,7 @@ export function startServer(options: ServerOptions): ServerResult {
       if (activeSocket === ws) {
         activeSocket = null;
       }
-      bridge.kill();
-      if (activeBridge === bridge) {
-        activeBridge = null;
-      }
+      // Bridge stays alive — don't kill it
     });
 
     ws.on('error', (err) => {
