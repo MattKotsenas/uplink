@@ -14,7 +14,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run build && node dist/bin/cli.js',
+    command: 'npm run build && node dist/bin/cli.js --port 3000',
     port: 3000,
     reuseExistingServer: !process.env.CI,
     env: { COPILOT_COMMAND: 'node --import tsx src/mock/mock-agent.ts --acp --stdio' },

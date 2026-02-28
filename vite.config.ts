@@ -7,6 +7,7 @@ export default defineConfig({
   publicDir: "public",
   build: {
     outDir: "../../dist/client",
+    emptyOutDir: true,
   },
   server: {
     proxy: {
