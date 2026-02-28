@@ -155,11 +155,11 @@ export function startServer(options: ServerOptions): ServerResult {
   let cachedInitializeResponse: string | null = null;
   let initializePromise: Promise<string> | null = null;
 
-  // Session replay buffer — remembers the active session's history so we can
-  // replay it when a client reconnects and session/load returns "already loaded".
+  // Session replay buffer — remembers session history so we can replay it
+  // when a client reconnects and session/load returns "already loaded".
+  // Keyed by session ID; survives session switches within the same bridge.
   let activeSessionId: string | null = null;
-  let activeSessionResult: string | null = null; // JSON result from session/new or session/load
-  const sessionHistory: string[] = [];
+  const sessionBuffers = new Map<string, { result: string; history: string[] }>();
 
   // Resolve bridge command and args once (same for all connections)
   let bridgeCommand: string;
@@ -216,6 +216,9 @@ export function startServer(options: ServerOptions): ServerResult {
         rejectEagerInit?.(new Error('Bridge closed during eager initialize'));
         resolveEagerInit = null;
         rejectEagerInit = null;
+        // Clear session buffers — sessions are gone with the bridge
+        activeSessionId = null;
+        sessionBuffers.clear();
       }
     });
 
@@ -332,8 +335,10 @@ export function startServer(options: ServerOptions): ServerResult {
       if (activeSessionId && line.includes('"session/update"')) {
         try {
           const msg = JSON.parse(line);
-          if (msg.method === 'session/update' && msg.params?.sessionId === activeSessionId) {
-            sessionHistory.push(line);
+          if (msg.method === 'session/update') {
+            const sid = msg.params?.sessionId;
+            const buf = sid ? sessionBuffers.get(sid) : undefined;
+            if (buf) buf.history.push(line);
           }
         } catch { /* ignore */ }
       }
@@ -347,10 +352,9 @@ export function startServer(options: ServerOptions): ServerResult {
           if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
             pendingSessionNewIds.delete(msg.id);
             recordSession(resolvedCwd, msg.result.sessionId);
-            // Start buffering this session's history
-            activeSessionId = msg.result.sessionId;
-            activeSessionResult = JSON.stringify(msg.result);
-            sessionHistory.length = 0;
+            const newSid = msg.result.sessionId;
+            activeSessionId = newSid;
+            sessionBuffers.set(newSid, { result: JSON.stringify(msg.result), history: [] });
           }
         } catch {
           // Not valid JSON — ignore
@@ -365,7 +369,10 @@ export function startServer(options: ServerOptions): ServerResult {
             pendingSessionLoadIds.delete(msg.id);
             // session/load succeeded — the bridge replayed history as notifications
             // (which we already buffered above). Save the result for future replays.
-            activeSessionResult = JSON.stringify(msg.result);
+            if (activeSessionId) {
+              const buf = sessionBuffers.get(activeSessionId);
+              if (buf) buf.result = JSON.stringify(msg.result);
+            }
           }
         } catch { /* ignore */ }
       }
@@ -428,24 +435,23 @@ export function startServer(options: ServerOptions): ServerResult {
         pendingSessionNewIds.add(parsed.id);
       }
 
-      // Intercept session/load — replay from buffer if same session is already active
+      // Intercept session/load — replay from buffer if we have one
       if (parsed?.method === 'session/load' && parsed.id != null) {
         const requestedId = parsed.params?.sessionId;
-        if (requestedId && requestedId === activeSessionId && activeSessionResult) {
-          log.session('replaying %d buffered updates for session %s', sessionHistory.length, requestedId);
-          // Fabricate success response
-          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(activeSessionResult) }));
-          // Replay buffered history
-          for (const line of sessionHistory) {
-            ws.send(line);
-          }
-          return; // Don't forward to bridge
-        }
-        // Different session — clear buffer and track the load
         if (requestedId) {
+          const buf = sessionBuffers.get(requestedId);
+          if (buf) {
+            // We have a buffer for this session — replay it instead of asking the CLI
+            log.session('replaying %d buffered updates for session %s', buf.history.length, requestedId);
+            activeSessionId = requestedId;
+            ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(buf.result) }));
+            for (const line of buf.history) {
+              ws.send(line);
+            }
+            return; // Don't forward to bridge
+          }
+          // No buffer — forward to CLI and start tracking
           activeSessionId = requestedId;
-          activeSessionResult = null;
-          sessionHistory.length = 0;
           pendingSessionLoadIds.add(parsed.id);
         }
       }
@@ -453,14 +459,16 @@ export function startServer(options: ServerOptions): ServerResult {
       // Buffer outgoing prompts as user_message_chunk so replay includes user messages
       if (parsed?.method === 'session/prompt' && activeSessionId) {
         const promptParams = parsed.params as { sessionId?: string; prompt?: Array<{ type: string; text?: string }> } | undefined;
-        if (promptParams?.sessionId === activeSessionId && promptParams.prompt) {
+        const sid = promptParams?.sessionId;
+        const buf = sid ? sessionBuffers.get(sid) : undefined;
+        if (buf && promptParams?.prompt) {
           for (const part of promptParams.prompt) {
             if (part.type === 'text' && part.text) {
-              sessionHistory.push(JSON.stringify({
+              buf.history.push(JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'session/update',
                 params: {
-                  sessionId: activeSessionId,
+                  sessionId: sid,
                   update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: part.text } },
                 },
               }));
