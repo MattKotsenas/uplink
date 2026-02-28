@@ -511,9 +511,7 @@ describe('Eager initialize', () => {
     'returns cached init response when client connects after init completes (fast path)',
     async () => {
       // The main test server uses the mock agent which responds instantly.
-      // By the time we connect, eager init is already done.
-      await new Promise((r) => setTimeout(r, 200));
-
+      // Eager init is already done by the time beforeAll completes.
       const ws = await connectWS();
 
       const t0 = Date.now();

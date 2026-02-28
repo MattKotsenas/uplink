@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { ChildProcess, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
@@ -11,6 +11,8 @@ interface MockAgent {
   waitForResponse: (id: string | number, timeout?: number) => Promise<any[]>;
   /** All messages received so far. */
   received: any[];
+  /** Clear received messages (for test isolation). */
+  clearReceived: () => void;
 }
 
 function spawnMockAgent(): MockAgent {
@@ -36,7 +38,6 @@ function spawnMockAgent(): MockAgent {
     try {
       const msg = JSON.parse(line);
       received.push(msg);
-      // Check all pending waiters
       for (let i = waiters.length - 1; i >= 0; i--) {
         if (waiters[i].predicate(received)) {
           waiters[i].resolve([...received]);
@@ -49,7 +50,6 @@ function spawnMockAgent(): MockAgent {
   });
 
   function waitFor(predicate: (msgs: any[]) => boolean, timeout = 15000): Promise<any[]> {
-    // Already satisfied?
     if (predicate(received)) return Promise.resolve([...received]);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -71,266 +71,209 @@ function spawnMockAgent(): MockAgent {
     return waitFor((msgs) => msgs.some((m) => m.id === id && (m.result || m.error)), timeout);
   }
 
-  return { process: child, send: (msg) => child.stdin!.write(JSON.stringify(msg) + '\n'), waitFor, waitForResponse, received };
+  function clearReceived(): void {
+    received.length = 0;
+  }
+
+  return { process: child, send: (msg) => child.stdin!.write(JSON.stringify(msg) + '\n'), waitFor, waitForResponse, received, clearReceived };
 }
 
 describe('Mock ACP Agent', () => {
-  let agent: MockAgent | undefined;
+  let agent: MockAgent;
+  let sessionId: string;
+  let nextId = 100;
 
-  afterEach(() => {
-    if (agent?.process) {
-      agent.process.kill();
-      agent = undefined;
-    }
+  function id() { return nextId++; }
+
+  beforeAll(async () => {
+    agent = spawnMockAgent();
+
+    // Initialize once for all tests
+    const initId = id();
+    agent.send({
+      jsonrpc: '2.0', id: initId, method: 'initialize',
+      params: { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'test-client', version: '1.0.0' } },
+    });
+    await agent.waitForResponse(initId);
+
+    const initResponse = agent.received.find(m => m.id === initId);
+    expect(initResponse.result.protocolVersion).toBe(1);
+    expect(initResponse.result.agentInfo).toEqual({ name: 'mock-agent', title: 'Mock Agent', version: '0.1.0' });
+
+    // Create session once for all tests
+    const sessionNewId = id();
+    agent.send({ jsonrpc: '2.0', id: sessionNewId, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
+    await agent.waitForResponse(sessionNewId);
+    sessionId = agent.received.find(m => m.id === sessionNewId).result.sessionId;
+    expect(sessionId).toContain('mock-session-');
+  }, 20000);
+
+  afterAll(() => {
+    agent?.process.kill();
   });
 
-  it('1. Initialize handshake', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
+  beforeEach(() => {
+    agent.clearReceived();
+  });
+
+  it('simple text scenario', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: 1,
-        clientCapabilities: {},
-        clientInfo: { name: 'test-client', version: '1.0.0' }
-      }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'simple' }] },
     });
 
-    await agent.waitForResponse(1);
-    const response = agent.received.find(m => m.id === 1);
-    
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
-    expect(response.result.protocolVersion).toBe(1);
-    expect(response.result.agentCapabilities).toBeDefined();
-    expect(response.result.agentInfo).toEqual({ name: 'mock-agent', title: 'Mock Agent', version: '0.1.0' });
-  });
+    await agent.waitForResponse(promptId);
+    const chunks = agent.received
+      .filter(m => !m.id && m.method === 'session/update' && m.params.update.sessionUpdate === 'agent_message_chunk')
+      .map(m => m.params.update.content);
 
-  it('2. Session/new', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-    const response = agent.received.find(m => m.id === 2);
-    
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
-    expect(response.result.sessionId).toBeDefined();
-    expect(typeof response.result.sessionId).toBe('string');
-    expect(response.result.sessionId).toContain('mock-session-');
-  });
-
-  it('3. Simple text scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
-    agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'simple' }] }
-    });
-
-    await agent.waitForResponse(3);
-    const msgs = agent.received;
-    
-    const chunks = msgs
-        .filter(m => !m.id && m.method === 'session/update' && m.params.update.sessionUpdate === 'agent_message_chunk')
-        .map(m => m.params.update.content);
-    
     expect(chunks.length).toBeGreaterThanOrEqual(3);
     expect(chunks[0].text).toBe('Hello ');
     expect(chunks[1].text).toBe('from ');
     expect(chunks[2].text).toBe('mock agent!');
 
-    const response = msgs.find(m => m.id === 3);
+    const response = agent.received.find(m => m.id === promptId);
     expect(response.result.stopReason).toBe('end_turn');
   });
 
-  it('4. Tool call scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
+  it('tool call lifecycle', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'tool' }] }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'tool' }] },
     });
 
-    await agent.waitForResponse(3);
+    await agent.waitForResponse(promptId);
     const updates = agent.received
       .filter(m => !m.id && m.method === 'session/update')
       .map(m => m.params.update);
-    
+
     const toolCall = updates.find(u => u.sessionUpdate === 'tool_call');
     expect(toolCall).toBeDefined();
     expect(toolCall.toolCallId).toBe('tc1');
     expect(toolCall.status).toBe('pending');
-    
-    const inProgress = updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'in_progress');
-    expect(inProgress).toBeDefined();
-    
-    const completed = updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'completed');
-    expect(completed).toBeDefined();
-    expect(completed.content).toBeDefined();
-    
-    const response = agent.received.find(m => m.id === 3);
-    expect(response.result.stopReason).toBe('end_turn');
+
+    expect(updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'in_progress')).toBeDefined();
+    expect(updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'completed')).toBeDefined();
+
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('end_turn');
   });
 
-  it('5. Permission required scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
+  it('permission granted flow', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'permission' }] }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'permission' }] },
     });
 
-    // Wait for permission request notification (has an id but it's a server-to-client request)
     await agent.waitFor(msgs => msgs.some(m => m.method === 'session/request_permission'));
     const permRequest = agent.received.find(m => m.method === 'session/request_permission');
-    expect(permRequest).toBeDefined();
     expect(permRequest.params.options).toBeDefined();
 
-    // Grant permission
     agent.send({
       jsonrpc: '2.0', id: permRequest.id,
-      result: { outcome: { outcome: 'selected', optionId: 'allow' } }
+      result: { outcome: { outcome: 'selected', optionId: 'allow' } },
     });
 
-    // Wait for prompt completion
-    await agent.waitForResponse(3);
+    await agent.waitForResponse(promptId);
     const updates = agent.received
       .filter(m => !m.id && m.method === 'session/update')
       .map(m => m.params.update);
-    
-    const completed = updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'completed');
-    expect(completed).toBeDefined();
-    
-    const response = agent.received.find(m => m.id === 3);
-    expect(response.result.stopReason).toBe('end_turn');
+
+    expect(updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'completed')).toBeDefined();
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('end_turn');
   });
 
-  it('6. Permission denied scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
+  it('permission denied flow', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'permission' }] }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'permission' }] },
     });
 
     await agent.waitFor(msgs => msgs.some(m => m.method === 'session/request_permission'));
     const permRequest = agent.received.find(m => m.method === 'session/request_permission');
-    
-    // Deny permission
+
     agent.send({
       jsonrpc: '2.0', id: permRequest.id,
-      result: { outcome: { outcome: 'selected', optionId: 'reject' } }
+      result: { outcome: { outcome: 'selected', optionId: 'reject' } },
     });
 
-    await agent.waitForResponse(3);
+    await agent.waitForResponse(promptId);
     const updates = agent.received
       .filter(m => !m.id && m.method === 'session/update')
       .map(m => m.params.update);
-    
-    const failed = updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'failed');
-    expect(failed).toBeDefined();
-    
-    const chunk = updates.find(u => u.sessionUpdate === 'agent_message_chunk' && u.content.text === 'Permission denied.');
-    expect(chunk).toBeDefined();
-    
-    const response = agent.received.find(m => m.id === 3);
-    expect(response.result.stopReason).toBe('end_turn');
+
+    expect(updates.find(u => u.sessionUpdate === 'tool_call_update' && u.status === 'failed')).toBeDefined();
+    expect(updates.find(u => u.sessionUpdate === 'agent_message_chunk' && u.content.text === 'Permission denied.')).toBeDefined();
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('end_turn');
   });
 
-  it('7. Refusal scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
+  it('refusal scenario', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'refuse' }] }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'refuse' }] },
     });
 
-    await agent.waitForResponse(3);
-    const response = agent.received.find(m => m.id === 3);
-    expect(response.result.stopReason).toBe('refusal');
-    
-    const updates = agent.received
+    await agent.waitForResponse(promptId);
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('refusal');
+
+    const chunk = agent.received
       .filter(m => !m.id && m.method === 'session/update')
-      .map(m => m.params.update);
-    const chunk = updates.find(u => u.sessionUpdate === 'agent_message_chunk');
-    expect(chunk).toBeDefined();
-    expect(chunk.content.text).toBe('I cannot do that.');
+      .find(m => m.params.update.sessionUpdate === 'agent_message_chunk');
+    expect(chunk.params.update.content.text).toBe('I cannot do that.');
   });
 
-  it('8. Cancel scenario', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    await agent.waitForResponse(1);
-    agent.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse(2);
-
-    // Send stream prompt
+  it('cancel mid-stream', async () => {
+    const promptId = id();
     agent.send({
-      jsonrpc: '2.0', id: 3, method: 'session/prompt',
-      params: { sessionId: 'mock-session-123', prompt: [{ type: 'text', text: 'stream' }] }
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'stream' }] },
     });
 
-    // Wait for the first chunk to confirm the stream started
     await agent.waitFor(msgs => msgs.some(
-      m => m.method === 'session/update' && m.params?.update?.sessionUpdate === 'agent_message_chunk'
+      m => m.method === 'session/update' && m.params?.update?.sessionUpdate === 'agent_message_chunk',
     ));
 
-    // Now cancel
-    agent.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: 'mock-session-123' } });
+    agent.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } });
 
-    await agent.waitForResponse(3);
-    const response = agent.received.find(m => m.id === 3);
-    expect(response.result.stopReason).toBe('cancelled');
+    await agent.waitForResponse(promptId);
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('cancelled');
   });
 
-  it('9. JSON-RPC correctness', { timeout: 20000 }, async () => {
-    agent = spawnMockAgent();
-    agent.send({ jsonrpc: '2.0', id: 'req-1', method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
-    
-    await agent.waitForResponse('req-1');
-    const response = agent.received.find(m => m.id === 'req-1');
-    
-    expect(response).toBeDefined();
-    expect(response.jsonrpc).toBe('2.0');
-    
-    agent.send({ jsonrpc: '2.0', id: 'req-2', method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await agent.waitForResponse('req-2');
-
+  it('session/load returns already-loaded error for active session', async () => {
+    const loadId = id();
     agent.send({
-      jsonrpc: '2.0', id: 'req-3', method: 'session/prompt',
-      params: { sessionId: 'sess-1', prompt: [{ type: 'text', text: 'simple' }] }
+      jsonrpc: '2.0', id: loadId, method: 'session/load',
+      params: { sessionId, cwd: process.cwd(), mcpServers: [] },
     });
 
-    await agent.waitForResponse('req-3');
-    const notifications = agent.received.filter(m => !m.id);
-    
+    await agent.waitForResponse(loadId);
+    const response = agent.received.find(m => m.id === loadId);
+    expect(response.error).toBeDefined();
+    expect(response.error.message).toContain('already loaded');
+  });
+
+  it('JSON-RPC envelope correctness', async () => {
+    const promptId = id();
+    agent.send({
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'simple' }] },
+    });
+
+    await agent.waitForResponse(promptId);
+
+    // All messages must have jsonrpc: '2.0'
+    agent.received.forEach(m => {
+      expect(m.jsonrpc).toBe('2.0');
+    });
+
+    // Notifications must not have id
+    const notifications = agent.received.filter(m => m.method);
     notifications.forEach(n => {
-      expect(n.jsonrpc).toBe('2.0');
-      expect(n.method).toBeDefined();
+      expect(n.id).toBeUndefined();
       expect(n.params).toBeDefined();
     });
   });

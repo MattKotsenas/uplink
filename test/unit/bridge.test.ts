@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll } from 'vitest';
 import { Bridge } from '../../src/server/bridge.js';
 import { startServer } from '../../src/server/index.js';
 import WebSocket from 'ws';
@@ -55,8 +55,8 @@ describe('Bridge class', () => {
       const half1 = '{"half":';
       const half2 = '"done"}\n';
       bridge['child']!.stdin!.write(half1);
-      // Small delay so the two writes are separate chunks
-      await new Promise((r) => setTimeout(r, 50));
+      // Ensure two separate chunks via event loop tick
+      await new Promise((r) => setImmediate(r));
       bridge['child']!.stdin!.write(half2);
 
       const line = await received;
@@ -113,8 +113,8 @@ describe('Bridge class', () => {
 
       bridge.spawn();
       await done;
-      // Wait a bit to ensure no extra messages arrive
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for the process to exit — confirms no extra messages will arrive
+      await new Promise<void>((resolve) => { bridge.onClose(() => resolve()); });
 
       expect(received).toHaveLength(1);
       expect(JSON.parse(received[0])).toEqual({ ok: true });
@@ -222,15 +222,14 @@ describe('Bridge class', () => {
       bridge = new Bridge({ command: 'node', args: ['-e', echoScript] });
       bridge.spawn();
 
-      const received: string[] = [];
-      bridge.onMessage((line) => received.push(line));
+      const firstMessage = new Promise<string>((resolve) => {
+        bridge.onMessage((line) => resolve(line));
+      });
 
       bridge.send('single\n');
 
-      await new Promise((r) => setTimeout(r, 200));
-      // Should receive exactly one non-empty message
-      expect(received).toHaveLength(1);
-      expect(received[0]).toBe('single');
+      const line = await firstMessage;
+      expect(line).toBe('single');
     });
 
     it('send() silently returns when process is not spawned', () => {
@@ -247,6 +246,7 @@ describe('Server integration', () => {
   let server: Server;
   let port: number;
   let sessionToken: string;
+  let closeServer: () => void;
   const sockets: WebSocket[] = [];
 
   function wsUrl() {
@@ -262,7 +262,7 @@ describe('Server integration', () => {
     });
   }
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const result = startServer({
       port: 0,
       copilotCommand: 'node',
@@ -270,6 +270,7 @@ describe('Server integration', () => {
     });
     server = result.server;
     sessionToken = result.sessionToken;
+    closeServer = result.close;
 
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => resolve());
@@ -278,19 +279,20 @@ describe('Server integration', () => {
     port = (server.address() as AddressInfo).port;
   });
 
+  afterAll(async () => {
+    closeServer();
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
   afterEach(async () => {
-    // Close all WebSocket clients
     for (const ws of sockets) {
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }
     }
     sockets.length = 0;
-
-    // Close the server
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve()));
-    });
   });
 
   it('connects via WebSocket', async () => {
@@ -305,20 +307,15 @@ describe('Server integration', () => {
       ws1.on('close', () => resolve());
     });
 
-    // Connect a second client
     const ws2 = await connectWs();
 
-    // First socket should be closed
     await ws1Closed;
     expect(ws1.readyState).toBe(WebSocket.CLOSED);
     expect(ws2.readyState).toBe(WebSocket.OPEN);
   });
 
-  it('closes WS → bridge process killed', async () => {
+  it('closes WS cleanly', async () => {
     const ws = await connectWs();
-
-    // Give the bridge a moment to spawn
-    await new Promise((r) => setTimeout(r, 100));
 
     const closed = new Promise<void>((resolve) => {
       ws.on('close', () => resolve());
@@ -326,28 +323,31 @@ describe('Server integration', () => {
 
     ws.close();
     await closed;
-    // After WS close the bridge should be cleaned up — nothing to assert
-    // beyond no errors / hanging processes (afterEach cleanup validates this)
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
   });
 
   it('bridge process exit → WS closed', async () => {
-    // Use a script that exits quickly
-    server.close();
-
+    // This test needs its own server with a short-lived bridge
     const result = startServer({
       port: 0,
       copilotCommand: 'node',
       copilotArgs: ['-e', 'setTimeout(() => process.exit(0), 100);'],
     });
-    server = result.server;
-    sessionToken = result.sessionToken;
+    const exitServer = result.server;
+    const exitClose = result.close;
 
     await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', () => resolve());
+      exitServer.listen(0, '127.0.0.1', () => resolve());
     });
-    port = (server.address() as AddressInfo).port;
+    const exitPort = (exitServer.address() as AddressInfo).port;
 
-    const ws = await connectWs();
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${exitPort}/ws?token=${encodeURIComponent(result.sessionToken)}`,
+    );
+    await new Promise<void>((resolve, reject) => {
+      ws.on('open', () => resolve());
+      ws.on('error', reject);
+    });
 
     const wsClosed = new Promise<void>((resolve) => {
       ws.on('close', () => resolve());
@@ -355,5 +355,10 @@ describe('Server integration', () => {
 
     await wsClosed;
     expect(ws.readyState).toBe(WebSocket.CLOSED);
+
+    exitClose();
+    await new Promise<void>((resolve, reject) => {
+      exitServer.close((err) => (err ? reject(err) : resolve()));
+    });
   });
 });

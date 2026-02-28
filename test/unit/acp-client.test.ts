@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AcpClient } from '../../src/client/acp-client';
 import { WebSocket } from 'ws';
 
+const flushAsync = () => new Promise(r => setTimeout(r, 0));
+
 // Mock WebSocket
 const mockWs = {
   send: vi.fn(),
@@ -70,7 +72,7 @@ describe('AcpClient Bug Fixes', () => {
       openCallback();
       
       // Wait for async operations
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
       
       // Attempts should NOT be reset to 0 if init fails
       // The code sets it to 0 only after success now.
@@ -90,7 +92,7 @@ describe('AcpClient Bug Fixes', () => {
       const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
       openCallback();
       
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
       
       expect((client as any).reconnectAttempts).toBe(0);
       expect(client.connectionState).toBe('ready');
@@ -195,7 +197,7 @@ describe('AcpClient Bug Fixes', () => {
       const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
       openCallback();
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
 
       // Verify session/load was called instead of session/new
       const calls = sendRequestSpy.mock.calls.map(c => c[0]);
@@ -235,7 +237,7 @@ describe('AcpClient Bug Fixes', () => {
       const openCb = ws2.addEventListener.mock.calls.find((c: any) => c[0] === 'open')?.[1];
       openCb();
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
 
       const calls = spy.mock.calls.map((c: any) => c[0]);
       expect(calls).not.toContain('session/new');
@@ -264,7 +266,7 @@ describe('AcpClient Bug Fixes', () => {
       const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
       openCallback();
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
 
       const calls = sendRequestSpy.mock.calls.map(c => c[0]);
       expect(calls).toContain('session/new');
@@ -287,7 +289,7 @@ describe('AcpClient Bug Fixes', () => {
       const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
       openCallback();
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await flushAsync();
 
       const calls = sendRequestSpy.mock.calls.map(c => c[0]);
       expect(calls).not.toContain('session/load');
