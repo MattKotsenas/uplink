@@ -14,7 +14,7 @@ vi.mock('../../src/server/tunnel.js', async (importOriginal) => {
 const mockGetTunnelInfo = vi.mocked(tunnel.getTunnelInfo);
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('resolvePort', () => {

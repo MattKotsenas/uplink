@@ -24,9 +24,13 @@ describe('AcpClient Bug Fixes', () => {
       removeEventListener: vi.fn(),
       readyState: 1, // OPEN
     };
-    global.WebSocket = vi.fn(() => mockWs) as any;
-    (global.WebSocket as any).OPEN = 1;
-    (global.WebSocket as any).CONNECTING = 0;
+    const MockWebSocket = vi.fn(function (this: any) {
+      return Object.assign(this, mockWs);
+    }) as any;
+    MockWebSocket.OPEN = 1;
+    MockWebSocket.CONNECTING = 0;
+    MockWebSocket.prototype = {};
+    global.WebSocket = MockWebSocket;
     // Mock localStorage for browser-only APIs
     global.localStorage = {
       getItem: vi.fn(() => null),
@@ -40,7 +44,7 @@ describe('AcpClient Bug Fixes', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('Bug 1: Reconnect counter reset', () => {

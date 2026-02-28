@@ -11,7 +11,8 @@ const mockExecFileSync = vi.mocked(childProcess.execFileSync);
 
 describe('getDevTunnelNotFoundMessage', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
   it('suggests brew on macOS', () => {
@@ -57,7 +58,7 @@ describe('hashCwd', () => {
 
 describe('getTunnelInfo', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('returns { exists: true, port } when tunnel exists with a port', () => {
@@ -87,7 +88,7 @@ describe('getTunnelInfo', () => {
 
 describe('createTunnel', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('calls devtunnel create and port create', () => {
@@ -104,7 +105,7 @@ describe('createTunnel', () => {
 
 describe('updateTunnelPort', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('deletes old port and creates new one', () => {
