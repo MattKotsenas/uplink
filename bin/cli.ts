@@ -43,6 +43,7 @@ const program = new Command()
   .option('--tunnel-id <name>', 'use a pre-created devtunnel (no auto-setup)')
   .option('--allow-anonymous', 'allow anonymous tunnel access (no GitHub auth)')
   .option('--cwd <path>', 'working directory for Copilot', process.cwd())
+  .option('--verbose', 'enable debug logging (DEBUG=uplink:*)')
   .parse();
 
 const opts = program.opts<{
@@ -51,7 +52,13 @@ const opts = program.opts<{
   tunnelId?: string;
   allowAnonymous?: boolean;
   cwd: string;
+  verbose?: boolean;
 }>();
+
+// Set DEBUG env before any debug() loggers are created
+if (opts.verbose && !process.env.DEBUG) {
+  process.env.DEBUG = 'uplink:*';
+}
 
 const explicitPort = opts.port != null ? parseInt(opts.port, 10) : undefined;
 const useTunnel = opts.tunnel || !!opts.tunnelId;

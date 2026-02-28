@@ -54,6 +54,16 @@ export type TimelineEntry =
   | { type: "plan" }
   | { type: "shell"; id: number };
 
+/** Serializable snapshot of conversation state for sessionStorage persistence. */
+export interface ConversationSnapshot {
+  messages: ConversationMessage[];
+  toolCalls: [string, TrackedToolCall][];
+  permissions: TrackedPermission[];
+  shellResults: [number, TrackedShellResult][];
+  plan: TrackedPlan | null;
+  timeline: TimelineEntry[];
+}
+
 // ─── Conversation State ───────────────────────────────────────────────
 
 export class Conversation {
@@ -217,6 +227,40 @@ export class Conversation {
 
   get pendingPermissions(): TrackedPermission[] {
     return this.permissions.filter((p) => !p.resolved);
+  }
+
+  // ─── Serialization ──────────────────────────────────────────────
+
+  /** Serialize conversation state to a plain object for sessionStorage. */
+  toJSON(): ConversationSnapshot {
+    return {
+      messages: this.messages,
+      toolCalls: [...this.toolCalls.entries()],
+      permissions: this.permissions,
+      shellResults: [...this.shellResults.entries()],
+      plan: this.plan,
+      timeline: this.timeline,
+    };
+  }
+
+  /** Restore conversation state from a serialized snapshot. */
+  restore(snapshot: ConversationSnapshot): void {
+    this.messages = snapshot.messages;
+    this.toolCalls = new Map(snapshot.toolCalls);
+    this.permissions = snapshot.permissions;
+    this.shellResults = new Map(snapshot.shellResults);
+    this.plan = snapshot.plan;
+    this.timeline = snapshot.timeline;
+    this.nextShellId = this.shellResults.size;
+    // Compute next thinking ID from existing thinking-* tool call IDs
+    let maxThinkingId = -1;
+    for (const key of this.toolCalls.keys()) {
+      const match = key.match(/^thinking-(\d+)$/);
+      if (match) maxThinkingId = Math.max(maxThinkingId, parseInt(match[1], 10));
+    }
+    this.nextThinkingId = maxThinkingId + 1;
+    this.activeThinkingId = null;
+    this.notify();
   }
 
   // ─── Reset ────────────────────────────────────────────────────────

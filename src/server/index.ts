@@ -8,6 +8,14 @@ import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { getRecentSessions, recordSession, renameSession } from './sessions.js';
+import createDebug from 'debug';
+
+const log = {
+  server: createDebug('uplink:server'),
+  bridge: createDebug('uplink:bridge'),
+  session: createDebug('uplink:session'),
+  timing: createDebug('uplink:timing'),
+};
 
 export interface ServerOptions {
   port: number;                    // default 3000
@@ -173,7 +181,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
   function ensureBridge(): Bridge {
     if (activeBridge?.isAlive()) {
-      console.log('Reusing existing bridge');
+      log.bridge('reusing existing bridge');
       return activeBridge;
     }
 
@@ -181,17 +189,17 @@ export function startServer(options: ServerOptions): ServerResult {
     cachedInitializeResponse = null;
     initializePromise = null;
 
-    console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
+    log.bridge('spawning: %s %o', bridgeOptions.command, bridgeOptions.args);
     const spawnStart = Date.now();
     const bridge = new Bridge(bridgeOptions);
     activeBridge = bridge;
 
     bridge.spawn();
-    console.debug(`[timing] bridge spawn: ${Date.now() - spawnStart}ms`);
+    log.timing('bridge spawn: %dms', Date.now() - spawnStart);
 
     // When bridge dies on its own, clean up
     bridge.onClose((code) => {
-      console.log(`Bridge closed with code ${code}`);
+      log.bridge('closed with code %d', code);
       if (activeSocket?.readyState === WebSocket.OPEN) {
         activeSocket.close(1000, 'Bridge closed');
       }
@@ -206,7 +214,7 @@ export function startServer(options: ServerOptions): ServerResult {
     });
 
     bridge.onError((err) => {
-      console.error('Bridge error:', err);
+      log.bridge('error: %O', err);
       if (activeSocket?.readyState === WebSocket.OPEN) {
         activeSocket.close(1011, 'Bridge error');
       }
@@ -248,7 +256,7 @@ export function startServer(options: ServerOptions): ServerResult {
       },
     }));
 
-    console.log('Eager initialize sent to bridge');
+    log.session('eager initialize sent');
   }
 
   function handleEagerInitResponse(line: string): boolean {
@@ -257,7 +265,7 @@ export function startServer(options: ServerOptions): ServerResult {
       const msg = JSON.parse(line);
       if (msg.id === EAGER_INIT_ID && msg.result) {
         cachedInitializeResponse = JSON.stringify(msg.result);
-        console.debug('[timing] eager initialize complete');
+        log.timing('eager initialize complete');
         resolveEagerInit(cachedInitializeResponse);
         resolveEagerInit = null;
         rejectEagerInit = null;
@@ -287,18 +295,18 @@ export function startServer(options: ServerOptions): ServerResult {
 
     // Enforce single connection (close old socket, but DON'T kill bridge)
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-      console.log('New connection replacing existing one');
+      log.server('new connection replacing existing one');
       activeSocket.close();
     }
 
-    console.log('Client connected');
+    log.server('client connected');
     activeSocket = ws;
 
     let bridge: Bridge;
     try {
       bridge = ensureBridge();
     } catch (err) {
-      console.error('Failed to spawn bridge:', err);
+      log.server('failed to spawn bridge: %O', err);
       ws.close(1011, 'Failed to spawn bridge');
       return;
     }
@@ -359,10 +367,10 @@ export function startServer(options: ServerOptions): ServerResult {
       if (parsed?.method === 'initialize' && parsed.id != null) {
         const clientId = parsed.id;
         if (cachedInitializeResponse) {
-          console.debug('[timing] initialize: cached (0ms)');
+          log.timing('initialize: cached (0ms)');
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cachedInitializeResponse) }));
         } else if (initializePromise) {
-          console.debug('[timing] initialize: awaiting eager init...');
+          log.timing('initialize: awaiting eager init...');
           initializePromise.then((cached) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cached) }));
@@ -390,7 +398,7 @@ export function startServer(options: ServerOptions): ServerResult {
     });
 
     ws.on('close', () => {
-      console.log('Client disconnected');
+      log.server('client disconnected');
       if (activeSocket === ws) {
         activeSocket = null;
       }
@@ -398,7 +406,7 @@ export function startServer(options: ServerOptions): ServerResult {
     });
 
     ws.on('error', (err) => {
-      console.error('WebSocket error:', err);
+      log.server('websocket error: %O', err);
     });
   });
 

@@ -65,6 +65,7 @@ export interface AcpClientOptions {
     request: PermissionRequestContext,
     respond: (outcome: PermissionOutcome) => void,
   ) => void;
+  onSessionResumed?: () => void;
   onError?: (error: Error) => void;
 }
 
@@ -113,11 +114,22 @@ export class AcpClient {
 
   async loadSession(sessionId: string): Promise<void> {
     this.ensureReadyState();
-    await this.sendRequest("session/load", {
-      sessionId,
-      cwd: this.options.cwd,
-      mcpServers: [],
-    } satisfies SessionLoadParams);
+    try {
+      await this.sendRequest("session/load", {
+        sessionId,
+        cwd: this.options.cwd,
+        mcpServers: [],
+      } satisfies SessionLoadParams);
+    } catch (err) {
+      // "already loaded" means the bridge still has this session active
+      if (err instanceof Error && err.message.includes('already loaded')) {
+        this.sessionId = sessionId;
+        this.restoreCachedModels();
+        this.options.onSessionResumed?.();
+        return;
+      }
+      throw err;
+    }
     this.sessionId = sessionId;
     localStorage.setItem('uplink-resume-session', sessionId);
   }
@@ -276,25 +288,31 @@ export class AcpClient {
     if (resumeId && this.agentCapabilities.loadSession) {
       try {
         const tLoad = performance.now();
-        await this.sendRequest<SessionNewResult>("session/load", {
+        const loadResult = await this.sendRequest<SessionNewResult>("session/load", {
           sessionId: resumeId,
           cwd: this.options.cwd,
           mcpServers: [],
         });
         console.debug(`[timing] session/load: ${(performance.now() - tLoad).toFixed(0)}ms`);
         console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
-        this.sessionId = resumeId;
-        this.restoreCachedModels();
+        this.sessionId = loadResult.sessionId ?? resumeId;
+        if (loadResult.models?.availableModels) {
+          localStorage.setItem('uplink-cached-models', JSON.stringify(loadResult.models));
+          this.options.onModelsAvailable?.(loadResult.models.availableModels, loadResult.models.currentModelId);
+        } else {
+          this.restoreCachedModels();
+        }
         return;
-      } catch (err: unknown) {
-        // "Already loaded" means the session IS active — treat as success
+      } catch (err) {
+        // "already loaded" means the bridge still has this session — treat as success
         if (err instanceof Error && err.message.includes('already loaded')) {
-          console.debug(`[timing] session/load (already loaded): ${(performance.now() - t0).toFixed(0)}ms`);
           this.sessionId = resumeId;
           this.restoreCachedModels();
+          this.options.onSessionResumed?.();
           return;
         }
-        // Any other error — clear stale key and fall through to new session
+        // Other errors — clear stale key and fall through to new session
+        console.debug('[resume] session/load failed:', err);
         localStorage.removeItem('uplink-resume-session');
       }
     }

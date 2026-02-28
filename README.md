@@ -114,85 +114,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build, and testing
 1. **Copilot CLI** runs locally in ACP mode (`copilot --acp --stdio`), speaking newline-delimited JSON-RPC over
    stdin/stdout.
 2. **Bridge server** spawns the CLI as a child process and bridges messages between its stdin/stdout and a WebSocket
-   endpoint that acts as a dumb pipe that never interprets ACP messages.
+   endpoint.
 3. **PWA** connects over WebSocket, drives the full ACP lifecycle (`initialize` → `session/new` → `session/prompt`), and
    renders the streaming response.
 4. **Dev Tunnel** (optional) exposes the bridge server over HTTPS so you can reach it from your phone or any remote
    browser.
 
-### Message Flow
-
-```mermaid
-sequenceDiagram
-    participant PWA
-    participant Bridge
-    participant Copilot as Copilot (stdio)
-
-    PWA->>Bridge: WS connect
-    Bridge->>Copilot: spawn copilot --acp --stdio
-
-    PWA->>Bridge: WS: initialize
-    Bridge->>Copilot: stdin: initialize\n
-    Copilot->>Bridge: stdout: result\n
-    Bridge->>PWA: WS: result
-
-    PWA->>Bridge: WS: session/prompt
-    Bridge->>Copilot: stdin: session/prompt\n
-    loop Streaming
-        Copilot->>Bridge: stdout: session/update\n
-        Bridge->>PWA: WS: session/update
-    end
-
-    Copilot->>Bridge: stdout: request_permission\n
-    Bridge->>PWA: WS: request_permission
-    PWA->>Bridge: WS: permission response
-    Bridge->>Copilot: stdin: permission response\n
-
-    Copilot->>Bridge: stdout: result\n
-    Bridge->>PWA: WS: prompt result
-```
-
-## Architecture Deep Dive
-
-### The Bridge (Dumb Pipe)
-
-The bridge **intentionally does not parse ACP messages**. It reads newline-delimited JSON from the subprocess stdout and
-sends each line as a WebSocket text message; in the other direction it writes incoming WebSocket messages to stdin with
-a trailing `\n`.
-
-Benefits:
-
-- **Simple** — the bridge is ~100 lines of logic, easy to audit.
-- **Testable** — you can verify framing without any ACP knowledge.
-- **Protocol-agnostic** — if ACP evolves, only the PWA client needs updating.
-
-### ACP Protocol
-
-The [Agent Client Protocol](https://agentclientprotocol.com) defines how AI-powered tools communicate with host
-applications. The wire format is JSON-RPC 2.0 delimited by newlines (NDJSON).
-
-Key message types the PWA handles:
-
-| Method | Direction | Purpose |
-|---|---|---|
-| `initialize` | Client → Agent | Negotiate capabilities |
-| `session/new` | Client → Agent | Create a conversation session |
-| `session/prompt` | Client → Agent | Send a user prompt |
-| `session/update` | Agent → Client | Streaming chunks, tool calls, plan updates |
-| `session/request_permission` | Agent → Client | Ask user to approve a tool action |
-| `session/cancel` | Client → Agent | Cancel a running prompt |
+For detailed architecture documentation — including bridge lifecycle, eager initialization, session resume, and
+logging — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Limitations (v1)
 
 - **Single session only** — one browser client at a time.
-- **No session resume** across bridge restarts.
 - **No file system / terminal proxying** — the PWA does not provide client-side FS or terminal capabilities back to the
    agent.
 - **No authentication** beyond devtunnel's built-in defaults.
 
 ## Roadmap Ideas
 
-- Session persistence and resume across restarts
 - Multi-session support (multiple browser tabs / devices)
 - File explorer integration
 - Push notifications for long-running tasks

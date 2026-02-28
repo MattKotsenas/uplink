@@ -4,3 +4,4 @@ dist
 bin/*.js
 test-results/
 playwright-report/
+server-debug.log

@@ -136,8 +136,9 @@ export interface SessionLoadParams {
 }
 
 /** Result of the `session/load` request.
- * The copilot CLI returns {} on success, or an error if already loaded. */
-export type SessionLoadResult = Record<string, never> | null;
+ * On success, the copilot CLI replays conversation history as session/update
+ * notifications and returns models info (same shape as session/new). */
+export type SessionLoadResult = SessionNewResult;
 
 // ─── session/prompt ───────────────────────────────────────────────────
 

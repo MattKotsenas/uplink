@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import createDebug from 'debug';
+
+const log = createDebug('uplink:bridge');
 
 export interface BridgeOptions {
   command: string;      // e.g., "copilot" or "npx tsx src/mock/mock-agent.ts"
@@ -57,7 +60,7 @@ export class Bridge {
 
     // Log stderr
     this.child.stderr?.on('data', (data) => {
-      console.error(`[Bridge stderr] ${data}`);
+      log('stderr: %s', data);
     });
   }
 
@@ -70,10 +73,10 @@ export class Bridge {
     try {
       const ok = this.child.stdin.write(payload);
       if (!ok) {
-        console.warn('[Bridge] stdin backpressure detected');
+        log('stdin backpressure detected');
       }
     } catch (err) {
-      console.error('[Bridge] Failed to write to stdin:', err);
+      log('failed to write to stdin: %O', err);
     }
   }
 

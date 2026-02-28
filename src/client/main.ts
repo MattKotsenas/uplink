@@ -1,5 +1,5 @@
 import { AcpClient, ConnectionState } from './acp-client.js';
-import { Conversation } from './conversation.js';
+import { Conversation, type ConversationSnapshot } from './conversation.js';
 import { ChatList } from './ui/chat.js';
 import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js';
 import { fetchSessions, openSessionsModal, SessionsModal } from './ui/sessions.js';
@@ -63,6 +63,9 @@ if ('serviceWorker' in navigator) {
 
 const conversation = new Conversation();
 
+// sessionStorage key for persisting conversation across page refreshes
+const SESSION_STATE_KEY = 'uplink-session-state';
+
 // Mount all timeline components into a single chatContainer.
 // ChatList renders messages, and child components (tool calls, permissions,
 // plans) are passed as children so they appear inline in the message flow.
@@ -83,10 +86,41 @@ const sessionsModalContainer = document.createElement('div');
 document.body.appendChild(sessionsModalContainer);
 render(h(SessionsModal, {}), sessionsModalContainer);
 
+/** Save conversation snapshot to sessionStorage. */
+function saveConversation(): void {
+  try {
+    sessionStorage.setItem(SESSION_STATE_KEY, JSON.stringify(conversation.toJSON()));
+  } catch {
+    // sessionStorage full or unavailable — ignore
+  }
+}
+
+// Save state when page is about to unload or suspend
+window.addEventListener('beforeunload', saveConversation);
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveConversation();
+});
+
+/** Restore conversation from sessionStorage (called when "already loaded" confirms active session). */
+function restoreConversation(): void {
+  try {
+    const saved = sessionStorage.getItem(SESSION_STATE_KEY);
+    if (saved) {
+      const snapshot: ConversationSnapshot = JSON.parse(saved);
+      conversation.restore(snapshot);
+      renderChat();
+    }
+  } catch {
+    sessionStorage.removeItem(SESSION_STATE_KEY);
+  }
+}
+
 /** Clear all conversation state when session changes. */
 function clearConversation(): void {
   conversation.clear();
   cancelAllPermissions(conversation);
+  // Don't clear sessionStorage here — it may be needed for "already loaded" restore.
+  // It gets overwritten naturally by saveConversation() when new content arrives.
 }
 
 // ─── WebSocket / ACP Client ──────────────────────────────────────────
@@ -153,6 +187,7 @@ async function initializeClient() {
         autoApproveId,
       );
     },
+    onSessionResumed: () => restoreConversation(),
     onError: (error) => console.error('ACP error:', error),
   });
 }

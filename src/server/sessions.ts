@@ -3,6 +3,9 @@ import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import type { SessionInfo } from '../shared/acp-types.js';
+import createDebug from 'debug';
+
+const log = createDebug('uplink:session');
 
 export type { SessionInfo } from '../shared/acp-types.js';
 
@@ -29,7 +32,7 @@ export function recordSession(cwd: string, sessionId: string, dbPath: string = S
       'INSERT OR IGNORE INTO sessions (id, cwd, created_at, updated_at) VALUES (?, ?, datetime(\'now\'), datetime(\'now\'))',
     ).run(sessionId, cwd);
   } catch (err: unknown) {
-    console.warn('Failed to record session:', (err as Error).message);
+    log('failed to record session: %s', (err as Error).message);
   } finally {
     db?.close();
   }
@@ -44,7 +47,7 @@ export function renameSession(sessionId: string, summary: string, dbPath: string
       'UPDATE sessions SET summary = ?, updated_at = datetime(\'now\') WHERE id = ?',
     ).run(summary, sessionId);
   } catch (err: unknown) {
-    console.warn('Failed to rename session:', (err as Error).message);
+    log('failed to rename session: %s', (err as Error).message);
   } finally {
     db?.close();
   }
@@ -80,7 +83,7 @@ function querySessionsSync(cwd: string, limit: number, dbPath: string): SessionI
         return [];
       }
     }
-    console.warn('Failed to read session store:', (err as Error).message);
+    log('failed to read session store: %s', (err as Error).message);
     return [];
   } finally {
     db?.close();
