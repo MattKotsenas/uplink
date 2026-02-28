@@ -145,6 +145,7 @@ export function startServer(options: ServerOptions): ServerResult {
   let activeBridge: Bridge | null = null;
   let activeSocket: WebSocket | null = null;
   let cachedInitializeResponse: string | null = null;
+  let initializePromise: Promise<string> | null = null;
 
   // Resolve bridge command and args once (same for all connections)
   let bridgeCommand: string;
@@ -178,6 +179,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
     // Clean up dead bridge state
     cachedInitializeResponse = null;
+    initializePromise = null;
 
     console.log(`Spawning bridge: ${bridgeOptions.command} ${bridgeOptions.args.join(' ')}`);
     const spawnStart = Date.now();
@@ -196,6 +198,10 @@ export function startServer(options: ServerOptions): ServerResult {
       if (activeBridge === bridge) {
         activeBridge = null;
         cachedInitializeResponse = null;
+        initializePromise = null;
+        rejectEagerInit?.(new Error('Bridge closed during eager initialize'));
+        resolveEagerInit = null;
+        rejectEagerInit = null;
       }
     });
 
@@ -208,6 +214,67 @@ export function startServer(options: ServerOptions): ServerResult {
 
     return bridge;
   }
+
+  // Eagerly start bridge and send initialize before any client connects.
+  // The ~24s cold start happens while the user opens the URL / scans QR.
+  const EAGER_INIT_ID = '__eager_init__';
+  let resolveEagerInit: ((cached: string) => void) | null = null;
+  let rejectEagerInit: ((err: Error) => void) | null = null;
+
+  function eagerInitialize(): void {
+    const bridge = ensureBridge();
+
+    initializePromise = new Promise<string>((resolve, reject) => {
+      resolveEagerInit = resolve;
+      rejectEagerInit = reject;
+    });
+    // Prevent unhandled rejection if bridge dies before anyone awaits
+    initializePromise.catch(() => {});
+
+    // The response will be caught by whatever onMessage handler is active.
+    // It checks for EAGER_INIT_ID and calls resolveEagerInit.
+    bridge.onMessage((line) => {
+      handleEagerInitResponse(line);
+    });
+
+    bridge.send(JSON.stringify({
+      jsonrpc: '2.0',
+      id: EAGER_INIT_ID,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: {},
+        clientInfo: { name: 'uplink', version: '1.0.0' },
+      },
+    }));
+
+    console.log('Eager initialize sent to bridge');
+  }
+
+  function handleEagerInitResponse(line: string): boolean {
+    if (!resolveEagerInit) return false;
+    try {
+      const msg = JSON.parse(line);
+      if (msg.id === EAGER_INIT_ID && msg.result) {
+        cachedInitializeResponse = JSON.stringify(msg.result);
+        console.debug('[timing] eager initialize complete');
+        resolveEagerInit(cachedInitializeResponse);
+        resolveEagerInit = null;
+        rejectEagerInit = null;
+        return true;
+      } else if (msg.id === EAGER_INIT_ID && msg.error) {
+        rejectEagerInit!(new Error(msg.error.message ?? 'Eager initialize failed'));
+        resolveEagerInit = null;
+        rejectEagerInit = null;
+        return true;
+      }
+    } catch {
+      // Not valid JSON — ignore
+    }
+    return false;
+  }
+
+  eagerInitialize();
 
   wss.on('connection', (ws, request) => {
     // Validate session token
@@ -236,26 +303,29 @@ export function startServer(options: ServerOptions): ServerResult {
       return;
     }
 
-    // Track pending initialize and session/new request IDs
-    const pendingInitializeIds = new Set<number | string>();
+    // Track pending session/new request IDs for session recording
     const pendingSessionNewIds = new Set<number | string>();
 
-    // Bridge -> WebSocket (intercept responses for caching/recording)
+    // Bridge -> WebSocket (forward messages, intercept session/new and eager init)
     bridge.onMessage((line) => {
+      // Check if this is the eager init response (arrives here if client
+      // connected before bridge responded to the eager initialize)
+      if (handleEagerInitResponse(line)) return;
+
+      // Filter out any echo of the eager init request (e.g. from echo bridges)
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.id === EAGER_INIT_ID) return;
+      } catch { /* not JSON, continue */ }
+
       if (ws.readyState !== WebSocket.OPEN) return;
 
-      if (pendingInitializeIds.size > 0 || pendingSessionNewIds.size > 0) {
+      if (pendingSessionNewIds.size > 0) {
         try {
           const msg = JSON.parse(line);
-          if (msg.id != null) {
-            if (pendingInitializeIds.has(msg.id) && msg.result) {
-              pendingInitializeIds.delete(msg.id);
-              cachedInitializeResponse = JSON.stringify(msg.result);
-            }
-            if (pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
-              pendingSessionNewIds.delete(msg.id);
-              recordSession(resolvedCwd, msg.result.sessionId);
-            }
+          if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
+            pendingSessionNewIds.delete(msg.id);
+            recordSession(resolvedCwd, msg.result.sessionId);
           }
         } catch {
           // Not valid JSON — ignore
@@ -291,14 +361,28 @@ export function startServer(options: ServerOptions): ServerResult {
         return;
       }
 
-      // Intercept initialize — replay cached response if bridge is reused
+      // Intercept initialize — await eager init result (already done or in-flight)
       if (parsed?.method === 'initialize' && parsed.id != null) {
+        const clientId = parsed.id;
         if (cachedInitializeResponse) {
           console.debug('[timing] initialize: cached (0ms)');
-          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(cachedInitializeResponse) }));
-          return;
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cachedInitializeResponse) }));
+        } else if (initializePromise) {
+          console.debug('[timing] initialize: awaiting eager init...');
+          initializePromise.then((cached) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cached) }));
+            }
+          }).catch((err) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, error: { code: -32603, message: err.message } }));
+            }
+          });
+        } else {
+          // No bridge, no promise — shouldn't happen but handle gracefully
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, error: { code: -32603, message: 'Bridge not available' } }));
         }
-        pendingInitializeIds.add(parsed.id);
+        return;
       }
 
       // Track session/new requests to record the session for history
