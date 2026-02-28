@@ -104,7 +104,7 @@ describe('Mock ACP Agent', () => {
     expect(response.result).toBeDefined();
     expect(response.result.protocolVersion).toBe(1);
     expect(response.result.agentCapabilities).toBeDefined();
-    expect(response.result.agentInfo).toEqual({ name: 'mock-agent', version: '0.1.0' });
+    expect(response.result.agentInfo).toEqual({ name: 'mock-agent', title: 'Mock Agent', version: '0.1.0' });
   });
 
   it('2. Session/new', { timeout: 20000 }, async () => {

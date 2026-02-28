@@ -47,6 +47,10 @@ function sendResponse(id: number | string, result: unknown): void {
   send({ jsonrpc: "2.0", id, result });
 }
 
+function sendError(id: number | string, code: number, message: string): void {
+  send({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
 function sendNotification(method: string, params: unknown): void {
   send(createNotification(method, params));
 }
@@ -383,8 +387,11 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
     case "initialize": {
       const result: InitializeResult = {
         protocolVersion: 1,
-        agentCapabilities: { loadSession: true },
-        agentInfo: { name: "mock-agent", version: "0.1.0" },
+        agentCapabilities: {
+          loadSession: true,
+          promptCapabilities: { image: true, audio: false, embeddedContext: true },
+        },
+        agentInfo: { name: "mock-agent", title: "Mock Agent", version: "0.1.0" },
         authMethods: [],
       };
       sendResponse(msg.id, result);
@@ -395,21 +402,35 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
       sendResponse(msg.id, {
         sessionId,
         models: {
-          currentModelId: 'claude-sonnet-4',
+          currentModelId: 'claude-sonnet-4.6',
           availableModels: [
-            { modelId: 'claude-sonnet-4', name: 'Claude Sonnet 4', description: 'Claude Sonnet 4', _meta: { copilotUsage: '1x' } },
-            { modelId: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', description: 'Claude Haiku 4.5', _meta: { copilotUsage: '1x' } },
-            { modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6', description: 'Claude Opus 4.6', _meta: { copilotUsage: '25x' } },
-            { modelId: 'gpt-5.1', name: 'GPT-5.1', description: 'GPT-5.1', _meta: { copilotUsage: '1x' } },
+            { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6', description: 'Claude Sonnet 4.6', _meta: { copilotUsage: '1x', copilotEnablement: 'enabled' } },
+            { modelId: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', description: 'Claude Sonnet 4.5', _meta: { copilotUsage: '1x', copilotEnablement: 'enabled' } },
+            { modelId: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', description: 'Claude Haiku 4.5', _meta: { copilotUsage: '0.33x', copilotEnablement: 'enabled' } },
+            { modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6', description: 'Claude Opus 4.6', _meta: { copilotUsage: '3x', copilotEnablement: 'enabled' } },
+            { modelId: 'gpt-5.1', name: 'GPT-5.1', description: 'GPT-5.1', _meta: { copilotUsage: '1x', copilotEnablement: 'enabled' } },
           ],
+        },
+        modes: {
+          availableModes: [
+            { id: 'https://agentclientprotocol.com/protocol/session-modes#agent', name: 'Agent', description: 'Default agent mode for conversational interactions' },
+            { id: 'https://agentclientprotocol.com/protocol/session-modes#plan', name: 'Plan', description: 'Plan mode for creating and executing multi-step plans' },
+            { id: 'https://agentclientprotocol.com/protocol/session-modes#autopilot', name: 'Autopilot', description: 'Autonomous mode that runs until task completion without user interaction (experimental)' },
+          ],
+          currentModeId: 'https://agentclientprotocol.com/protocol/session-modes#agent',
         },
       } satisfies SessionNewResult);
       break;
     }
     case "session/load": {
       const params = msg.params as SessionLoadParams;
-      sessionId = params.sessionId;
-      sendResponse(msg.id, {});
+      if (sessionId && params.sessionId === sessionId) {
+        // Real copilot CLI rejects loading a session that's already active
+        sendError(msg.id, -32602, `Session ${params.sessionId} is already loaded`);
+      } else {
+        sessionId = params.sessionId;
+        sendResponse(msg.id, {});
+      }
       break;
     }
     case "session/prompt": {

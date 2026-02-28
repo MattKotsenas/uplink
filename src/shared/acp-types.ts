@@ -111,6 +111,11 @@ export interface SessionNewResult {
     availableModels: AvailableModel[];
     currentModelId?: string;
   };
+  /** Available interaction modes (agent, plan, autopilot). */
+  modes?: {
+    availableModes: { id: string; name: string; description: string }[];
+    currentModeId?: string;
+  };
 }
 
 /** A model advertised by the agent. */

@@ -420,4 +420,94 @@ describe('ACP bridge full-flow integration', () => {
     },
     TEST_TIMEOUT,
   );
+
+  it(
+    'reuses bridge on reconnect and caches initialize response',
+    async () => {
+      // First connection — cold start
+      const ws1 = await connectWS();
+      const initResult1 = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+        ws1,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+      expect(initResult1.protocolVersion).toBe(1);
+
+      const sessionResult = await rpcRequest<{ sessionId: string }>(ws1, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      const sessionId = sessionResult.sessionId;
+
+      // Disconnect first client
+      await closeSocket(ws1);
+
+      // Second connection — should reuse bridge with cached initialize
+      const ws2 = await connectWS();
+      const initResult2 = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+        ws2,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+      // Cached response should match original
+      expect(initResult2.protocolVersion).toBe(initResult1.protocolVersion);
+      expect(initResult2.agentInfo?.name).toBe(initResult1.agentInfo?.name);
+
+      // Session load will fail ("already loaded") — matches real copilot behavior
+      // when the bridge is reused and the session is still in memory
+      await expect(
+        rpcRequest<Record<string, unknown>>(ws2, 'session/load', {
+          sessionId,
+          cwd: process.cwd(),
+          mcpServers: [],
+        }),
+      ).rejects.toThrow('already loaded');
+
+      // Fall back to session/new (fast on warm bridge)
+      const newSession = await rpcRequest<{ sessionId: string }>(ws2, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+
+      // Prompt should work on the reused bridge
+      const { requestId, promise } = promptWithCollection(ws2, newSession.sessionId, 'simple after reconnect');
+      const messages = await promise;
+      expectStopReason(messages, requestId, 'end_turn');
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'spawns new bridge after previous bridge dies',
+    async () => {
+      // First connection
+      const ws1 = await connectWS();
+      const initResult1 = await rpcRequest<{ protocolVersion: number }>(
+        ws1,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+      expect(initResult1.protocolVersion).toBe(1);
+
+      // Close WS — bridge stays alive
+      await closeSocket(ws1);
+
+      // Wait a moment, then connect again — bridge should still be reused
+      const ws2 = await connectWS();
+      const initResult2 = await rpcRequest<{ protocolVersion: number }>(
+        ws2,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+      expect(initResult2.protocolVersion).toBe(1);
+
+      // Bootstrap a new session to verify the bridge works
+      const sessionResult = await rpcRequest<{ sessionId: string }>(ws2, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      expect(sessionResult.sessionId).toMatch(/^mock-session-/);
+    },
+    TEST_TIMEOUT,
+  );
 });

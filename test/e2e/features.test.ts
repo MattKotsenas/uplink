@@ -130,13 +130,14 @@ test('/model shows available models in autocomplete', async ({ page }) => {
 
   // Should show available models from mock agent
   const items = palette.locator('.command-palette-item');
-  await expect(items).toHaveCount(4);
+  await expect(items).toHaveCount(5);
 
   // Verify model names appear
-  await expect(palette.locator('.command-palette-label').nth(0)).toContainText('Claude Sonnet 4');
-  await expect(palette.locator('.command-palette-label').nth(1)).toContainText('Claude Haiku 4.5');
-  await expect(palette.locator('.command-palette-label').nth(2)).toContainText('Claude Opus 4.6');
-  await expect(palette.locator('.command-palette-label').nth(3)).toContainText('GPT-5.1');
+  await expect(palette.locator('.command-palette-label').nth(0)).toContainText('Claude Sonnet 4.6');
+  await expect(palette.locator('.command-palette-label').nth(1)).toContainText('Claude Sonnet 4.5');
+  await expect(palette.locator('.command-palette-label').nth(2)).toContainText('Claude Haiku 4.5');
+  await expect(palette.locator('.command-palette-label').nth(3)).toContainText('Claude Opus 4.6');
+  await expect(palette.locator('.command-palette-label').nth(4)).toContainText('GPT-5.1');
 
   // Filter by typing a prefix
   await input.fill('/model haiku');
@@ -151,7 +152,7 @@ test('model label shows current model on the input border', async ({ page }) => 
   // Should show the default model from session/new
   const label = page.locator('#model-label');
   await expect(label).toBeVisible();
-  await expect(label).toContainText('Claude Sonnet 4');
+  await expect(label).toContainText('Claude Sonnet 4.6');
 
   // Switch model via /model command
   const input = page.locator('#prompt-input');
