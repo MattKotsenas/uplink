@@ -401,6 +401,7 @@ pre code {
 #prompt-input:focus + #model-label {
   border-color: var(--accent);
   border-bottom-color: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 /* Mode indicator: colored border on the input box and model label tab */
@@ -412,6 +413,7 @@ pre code {
 [data-mode="plan"] #prompt-input:focus + #model-label {
   border-color: var(--info);
   border-bottom-color: var(--bg-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 25%, transparent);
 }
 
 [data-mode="plan"] #prompt-input:focus {
@@ -427,6 +429,7 @@ pre code {
 [data-mode="autopilot"] #prompt-input:focus + #model-label {
   border-color: var(--success);
   border-bottom-color: var(--bg-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent);
 }
 
 [data-mode="autopilot"] #prompt-input:focus {
@@ -442,6 +445,7 @@ pre code {
 [data-mode="shell-input"] #prompt-input:focus + #model-label {
   border-color: var(--peach);
   border-bottom-color: var(--bg-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--peach) 25%, transparent);
 }
 
 [data-mode="shell-input"] #prompt-input:focus {
