@@ -29,6 +29,8 @@ export interface ServerResult {
   server: ReturnType<typeof createServer>;
   sessionToken: string;
   close: () => void;
+  /** Resolves when the bridge's eager initialize completes. */
+  initializePromise: Promise<void>;
 }
 
 /**
@@ -639,6 +641,6 @@ export function startServer(options: ServerOptions): ServerResult {
     activeSocket = null;
   };
 
-  return { server, sessionToken, close };
+  return { server, sessionToken, close, initializePromise: initializePromise!.then(() => {}) };
 }
 

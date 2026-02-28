@@ -83,8 +83,26 @@ async function listenOrThrow(server: ReturnType<typeof startServer>['server'], d
   });
 }
 
+// ─── Startup checklist helpers ────────────────────────────────────────
+
+const DONE  = '✔';
+const SKIP  = '⊘';
+const FAIL  = '✗';
+const WAIT  = '⋯';
+
+/** Print a checklist step inline (no trailing newline so we can update it). */
+function stepStart(label: string, detail = '') {
+  process.stdout.write(`  ${WAIT} ${label.padEnd(14)}${detail}`);
+}
+
+/** Finish a checklist step: overwrite the current line. */
+function stepDone(label: string, detail: string, icon = DONE) {
+  process.stdout.write(`\r  ${icon} ${label.padEnd(14)}${detail}\n`);
+}
+
 async function main() {
-  console.log('🛰 Copilot Uplink starting...');
+  console.log();
+  console.log('  🛰  Copilot Uplink');
   console.log();
 
   const staticDir = resolveStaticDir();
@@ -105,30 +123,31 @@ async function main() {
   if (canFallback && desiredPort !== 0) {
     const available = await isPortAvailable(desiredPort);
     if (!available) {
-      console.log(`  Port ${desiredPort} in use, picking random port...`);
       listenPort = 0;
     }
   }
 
+  // ── Step 1: Server ──────────────────────────────────────────────────
+  stepStart('Server');
   const result = startServer({ port: listenPort, staticDir, cwd });
   await listenOrThrow(result.server, listenPort);
 
-  const { server, close } = result;
+  const { server, close, initializePromise } = result;
   const addr = server.address();
   if (!addr || typeof addr === 'string') {
     throw new Error('Unable to determine server port');
   }
 
   const actualPort = addr.port;
+  stepDone('Server', `http://localhost:${actualPort}`);
 
-  console.log(`  Local:  http://localhost:${actualPort}`);
-
+  // ── Step 2: Tunnel ──────────────────────────────────────────────────
   let tunnel: TunnelResult | null = null;
   if (useTunnel) {
     if (opts.allowAnonymous) {
-      console.warn('⚠️  WARNING: Anonymous tunnel access enabled!');
-      console.warn('   Anyone with the URL can control your Copilot session.');
+      console.log(`  ⚠ Anonymous tunnel access — anyone with the URL can control Copilot.`);
     }
+    stepStart('Tunnel');
     try {
       let tunnelId = opts.tunnelId;
 
@@ -136,7 +155,6 @@ async function main() {
       if (tunnelName && !tunnelId) {
         const info = getTunnelInfo(tunnelName);
         if (!info.exists) {
-          console.log(`  Creating tunnel ${tunnelName}...`);
           createTunnel(tunnelName, actualPort);
         } else if (info.port !== actualPort) {
           updateTunnelPort(tunnelName, info.port ?? 0, actualPort);
@@ -145,17 +163,34 @@ async function main() {
       }
 
       tunnel = await startTunnel({ port: actualPort, tunnelId, allowAnonymous: opts.allowAnonymous });
-      console.log(`  Tunnel: ${tunnel.url}`);
-      console.log();
-      console.log('  Scan QR code on your phone to connect:');
-      qrcode.generate(tunnel.url, { small: true }, (code) => {
-        console.log(code);
-      });
+      stepDone('Tunnel', tunnel.url);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`  Tunnel failed: ${message}`);
-      console.log('  (Continuing without tunnel)');
+      stepDone('Tunnel', `failed — ${message}`, FAIL);
     }
+  } else {
+    stepDone('Tunnel', 'skipped (use --tunnel to enable)', SKIP);
+  }
+
+  // ── Step 3: Copilot CLI ─────────────────────────────────────────────
+  stepStart('Copilot CLI', 'initializing...');
+  const initStart = Date.now();
+  try {
+    await initializePromise;
+    const elapsed = ((Date.now() - initStart) / 1000).toFixed(1);
+    stepDone('Copilot CLI', `ready (${elapsed}s)`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    stepDone('Copilot CLI', `failed — ${message}`, FAIL);
+  }
+
+  // ── QR code (if tunnel) ─────────────────────────────────────────────
+  if (tunnel) {
+    console.log();
+    console.log('  Scan to connect:');
+    qrcode.generate(tunnel.url, { small: true }, (code) => {
+      console.log(code);
+    });
   }
 
   console.log();
