@@ -348,10 +348,13 @@ pre code {
 
 #model-label {
   position: absolute;
-  top: -8px;
+  top: -11px;
   right: 12px;
   background-color: var(--bg-primary);
-  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--bg-primary);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  padding: var(--space-1) var(--space-2);
   font-size: var(--text-xs);
   color: var(--text-secondary);
   line-height: 1;
@@ -394,9 +397,14 @@ pre code {
   box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
-/* Mode indicator: colored border on the input box */
+/* Mode indicator: colored border on the input box and model label tab */
 [data-mode="plan"] #prompt-input {
   border-color: var(--info);
+}
+
+[data-mode="plan"] #model-label {
+  border-color: var(--info);
+  border-bottom-color: var(--bg-primary);
 }
 
 [data-mode="plan"] #prompt-input:focus {
@@ -408,6 +416,11 @@ pre code {
   border-color: var(--success);
 }
 
+[data-mode="autopilot"] #model-label {
+  border-color: var(--success);
+  border-bottom-color: var(--bg-primary);
+}
+
 [data-mode="autopilot"] #prompt-input:focus {
   border-color: var(--success);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent);
@@ -415,6 +428,11 @@ pre code {
 
 [data-mode="shell-input"] #prompt-input {
   border-color: var(--peach);
+}
+
+[data-mode="shell-input"] #model-label {
+  border-color: var(--peach);
+  border-bottom-color: var(--bg-primary);
 }
 
 [data-mode="shell-input"] #prompt-input:focus {
