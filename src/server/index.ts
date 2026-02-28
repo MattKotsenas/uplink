@@ -185,7 +185,7 @@ export function startServer(options: ServerOptions): ServerResult {
     activeBridge = bridge;
 
     bridge.spawn();
-    console.log(`[timing] bridge spawn: ${Date.now() - spawnStart}ms`);
+    console.debug(`[timing] bridge spawn: ${Date.now() - spawnStart}ms`);
 
     // When bridge dies on its own, clean up
     bridge.onClose((code) => {
@@ -295,7 +295,7 @@ export function startServer(options: ServerOptions): ServerResult {
       // Intercept initialize — replay cached response if bridge is reused
       if (parsed?.method === 'initialize' && parsed.id != null) {
         if (cachedInitializeResponse) {
-          console.log('[timing] initialize: cached (0ms)');
+          console.debug('[timing] initialize: cached (0ms)');
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(cachedInitializeResponse) }));
           return;
         }

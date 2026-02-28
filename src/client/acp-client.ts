@@ -243,7 +243,7 @@ export class AcpClient {
 
     this.initializeSession()
       .then(() => {
-        console.log(`[timing] WS open → ready: ${(performance.now() - wsOpenTime).toFixed(0)}ms`);
+        console.debug(`[timing] WS open → ready: ${(performance.now() - wsOpenTime).toFixed(0)}ms`);
         this.reconnectAttempts = 0;
         this.setState("ready");
         callbacks?.onReady?.();
@@ -267,7 +267,7 @@ export class AcpClient {
       clientCapabilities: CLIENT_CAPABILITIES,
       clientInfo: CLIENT_INFO,
     });
-    console.log(`[timing] initialize: ${(performance.now() - t0).toFixed(0)}ms`);
+    console.debug(`[timing] initialize: ${(performance.now() - t0).toFixed(0)}ms`);
 
     this.agentCapabilities = initResult.agentCapabilities ?? {};
 
@@ -285,8 +285,8 @@ export class AcpClient {
             cwd: this.options.cwd,
             mcpServers: [],
           });
-          console.log(`[timing] session/load: ${(performance.now() - tLoad).toFixed(0)}ms`);
-          console.log(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
+          console.debug(`[timing] session/load: ${(performance.now() - tLoad).toFixed(0)}ms`);
+          console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
           this.sessionId = resumeId;
           return;
         } catch {
@@ -300,8 +300,8 @@ export class AcpClient {
       "session/new",
       { cwd: this.options.cwd, mcpServers: [] },
     );
-    console.log(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
-    console.log(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
+    console.debug(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
+    console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
     this.sessionId = result.sessionId;
     localStorage.setItem('uplink-resume-session', result.sessionId);
 
