@@ -394,14 +394,17 @@ pre code {
 #prompt-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+/* Unified glow: drop-shadow on wrapper traces the combined shape of input + label tab */
+#input-wrapper:has(#prompt-input:focus) {
+  filter: drop-shadow(0 0 3px var(--accent));
 }
 
 /* Model label tab follows input accent border when focused */
 #prompt-input:focus + #model-label {
   border-color: var(--accent);
   border-bottom-color: var(--bg-primary);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 /* Mode indicator: colored border on the input box and model label tab */
@@ -413,12 +416,14 @@ pre code {
 [data-mode="plan"] #prompt-input:focus + #model-label {
   border-color: var(--info);
   border-bottom-color: var(--bg-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 25%, transparent);
 }
 
 [data-mode="plan"] #prompt-input:focus {
   border-color: var(--info);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 25%, transparent);
+}
+
+[data-mode="plan"] #input-wrapper:has(#prompt-input:focus) {
+  filter: drop-shadow(0 0 3px var(--info));
 }
 
 [data-mode="autopilot"] #prompt-input {
@@ -429,12 +434,14 @@ pre code {
 [data-mode="autopilot"] #prompt-input:focus + #model-label {
   border-color: var(--success);
   border-bottom-color: var(--bg-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent);
 }
 
 [data-mode="autopilot"] #prompt-input:focus {
   border-color: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent);
+}
+
+[data-mode="autopilot"] #input-wrapper:has(#prompt-input:focus) {
+  filter: drop-shadow(0 0 3px var(--success));
 }
 
 [data-mode="shell-input"] #prompt-input {
@@ -445,12 +452,14 @@ pre code {
 [data-mode="shell-input"] #prompt-input:focus + #model-label {
   border-color: var(--peach);
   border-bottom-color: var(--bg-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--peach) 25%, transparent);
 }
 
 [data-mode="shell-input"] #prompt-input:focus {
   border-color: var(--peach);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--peach) 25%, transparent);
+}
+
+[data-mode="shell-input"] #input-wrapper:has(#prompt-input:focus) {
+  filter: drop-shadow(0 0 3px var(--peach));
 }
 
 /* ─── Command Palette ─────────────────────────────────────────────── */
