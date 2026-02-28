@@ -1,25 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AcpClient } from '../../src/client/acp-client';
-import { WebSocket } from 'ws';
 
 const flushAsync = () => new Promise(r => setTimeout(r, 0));
 
-// Mock WebSocket
-const mockWs = {
-  send: vi.fn(),
-  close: vi.fn(),
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  readyState: 1 // OPEN
-};
-
-// Mock global WebSocket
-global.WebSocket = vi.fn(() => mockWs) as any;
-(global.WebSocket as any).OPEN = 1;
-(global.WebSocket as any).CONNECTING = 0;
-
 describe('AcpClient Bug Fixes', () => {
   let client: AcpClient;
+  let mockWs: any;
   const options = {
     wsUrl: 'ws://localhost:3000',
     cwd: '/test/cwd',
@@ -31,6 +17,16 @@ describe('AcpClient Bug Fixes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockWs = {
+      send: vi.fn(),
+      close: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      readyState: 1, // OPEN
+    };
+    global.WebSocket = vi.fn(() => mockWs) as any;
+    (global.WebSocket as any).OPEN = 1;
+    (global.WebSocket as any).CONNECTING = 0;
     // Mock localStorage for browser-only APIs
     global.localStorage = {
       getItem: vi.fn(() => null),

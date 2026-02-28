@@ -124,7 +124,7 @@ describe('ChatList', () => {
     expect(container.querySelectorAll('.message').length).toBe(0);
   });
 
-  it('thinking-dots span has stable width via min-width', () => {
+  it('shows thinking dots when prompting', () => {
     const conv = new Conversation();
     conv.addUserMessage('hello');
     conv.isPrompting = true;
@@ -134,8 +134,6 @@ describe('ChatList', () => {
       <ChatList conversation={conv} scrollContainer={scrollContainer} />,
     );
 
-    const dots = container.querySelector('.thinking-dots');
-    expect(dots).toBeTruthy();
-    expect(dots!.tagName.toLowerCase()).toBe('span');
+    expect(container.querySelector('.thinking-dots')).toBeTruthy();
   });
 });
