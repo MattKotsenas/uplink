@@ -120,30 +120,31 @@ This is because the CLI still has the session loaded in memory. Unlike loading a
 session (which triggers full history replay via `session/update` notifications), reloading the
 *same* session is rejected.
 
-### Solution: Client-Side State Persistence
+### Solution: Server-Side Session Buffer
 
-Instead of fighting the bridge protocol, we persist conversation state in the browser:
+The server keeps an in-memory buffer of the active session's `session/update` messages plus
+synthesized `user_message_chunk` entries from outgoing `session/prompt` calls. When a client
+sends `session/load` for the already-active session:
 
-1. **`sessionStorage`** stores a snapshot of the conversation (messages, tool calls, permissions,
-   shell results, plan, timeline) on `beforeunload` and `visibilitychange`.
-2. On page load, if `sessionStorage` contains a snapshot, the conversation is restored
-   **before the first render** — no flash of empty UI.
-3. When the client receives "already loaded" from `session/load`, it treats it as success
-   (the session IS active), sets the session ID, and restores cached models from `localStorage`.
+1. The server intercepts the request (does NOT forward to the CLI).
+2. It fabricates a success response with the cached session result.
+3. It replays all buffered history lines to the client.
 
-### Why sessionStorage (not localStorage)?
+The client never sees the "already loaded" error — it receives the same message flow as a
+normal `session/load`. The `onSessionUpdate` handler renders messages identically whether
+they come from a live stream or a replay.
 
-- **Tab-scoped** — each tab has its own copy; no cross-tab conflicts.
-- **Auto-clears on tab close** — no stale data accumulates; no expiration logic needed.
-- **Persists across refresh** — survives F5 and mobile suspend/resume.
+The buffer is cleared when:
+- The client loads a **different** session (buffer resets for the new session)
+- The bridge process dies and restarts (buffer lost; `session/load` triggers fresh ACP replay)
 
 ### Session Change Flow
 
 When switching to a *different* session (via session picker or `/session load`):
-1. `sessionStorage` is cleared
-2. `session/load` with the new ID goes to the bridge
-3. The bridge unloads the current session, loads the new one, and replays full history
+1. The server clears the buffer and forwards the request to the CLI
+2. The CLI unloads the current session, loads the new one, and replays full history
    as `user_message_chunk` and `agent_message_chunk` notifications
+3. The server captures these notifications into the new buffer
 4. The client renders the replayed history normally
 
 ## Logging

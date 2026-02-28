@@ -205,45 +205,8 @@ describe('AcpClient Bug Fixes', () => {
       expect(global.localStorage.removeItem).not.toHaveBeenCalledWith('uplink-resume-session');
     });
 
-    it('should treat "already loaded" error as successful resume', async () => {
-      const modelsCallback = vi.fn();
-      const cachedModels = JSON.stringify({
-        availableModels: [{ modelId: 'cached-model' }],
-        currentModelId: 'cached-model',
-      });
-      (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
-        if (key === 'uplink-resume-session') return 'sess-already-loaded';
-        if (key === 'uplink-cached-models') return cachedModels;
-        return null;
-      });
-
-      // Create client with onModelsAvailable callback
-      const clientWithModels = new AcpClient({
-        url: 'ws://test',
-        cwd: '/test',
-        onModelsAvailable: modelsCallback,
-      });
-      const spy = vi.spyOn(clientWithModels as any, 'sendRequest');
-      spy.mockResolvedValueOnce({ agentCapabilities: { loadSession: true } });
-      // session/load fails with "already loaded"
-      spy.mockRejectedValueOnce(new Error('Session sess-already-loaded is already loaded'));
-
-      clientWithModels.connect();
-      const ws2 = (clientWithModels as any).ws;
-      const openCb = ws2.addEventListener.mock.calls.find((c: any) => c[0] === 'open')?.[1];
-      openCb();
-
-      await flushAsync();
-
-      const calls = spy.mock.calls.map((c: any) => c[0]);
-      expect(calls).not.toContain('session/new');
-      expect(clientWithModels.currentSessionId).toBe('sess-already-loaded');
-      // Models restored from localStorage cache
-      expect(modelsCallback).toHaveBeenCalledWith(
-        [{ modelId: 'cached-model' }],
-        'cached-model',
-      );
-    });
+    // "already loaded" is now handled server-side (server replays buffered history).
+    // The client never sees this error — server fabricates a success response.
 
     it('should fall back to session/new when session/load fails with non-resume error', async () => {
       (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {

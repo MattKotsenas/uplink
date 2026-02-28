@@ -423,7 +423,7 @@ describe('ACP bridge full-flow integration', () => {
   );
 
   it(
-    'reuses bridge on reconnect — session/load returns "already loaded" which is fine',
+    'reuses bridge on reconnect — session/load replays buffered history',
     async () => {
       // First connection — cold start
       const ws1 = await connectWS();
@@ -440,6 +440,11 @@ describe('ACP bridge full-flow integration', () => {
       });
       const sessionId = sessionResult.sessionId;
 
+      // Send a prompt so there's history to replay
+      const { requestId: promptId1, promise: p1 } = promptAndCollect(ws1, sessionId, 'simple before reconnect');
+      const msgs1 = await p1;
+      expectStopReason(msgs1, promptId1, 'end_turn');
+
       // Disconnect first client
       await closeSocket(ws1);
 
@@ -454,14 +459,24 @@ describe('ACP bridge full-flow integration', () => {
       expect(initResult2.protocolVersion).toBe(initResult1.protocolVersion);
       expect(initResult2.agentInfo?.name).toBe(initResult1.agentInfo?.name);
 
-      // Session/load returns "already loaded" error — session is still active
-      await expect(
-        rpcRequest(ws2, 'session/load', {
-          sessionId,
-          cwd: process.cwd(),
-          mcpServers: [],
-        }),
-      ).rejects.toThrow('already loaded');
+      // Session/load should succeed (server replays from buffer)
+      // Collect all messages that arrive (replayed history + load result)
+      const replayedMessages: string[] = [];
+      ws2.on('message', (data) => replayedMessages.push(data.toString()));
+
+      const loadResult = await rpcRequest<{ sessionId?: string }>(ws2, 'session/load', {
+        sessionId,
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      expect(loadResult).toBeDefined();
+
+      // Wait briefly for replayed messages to arrive
+      await new Promise(r => setTimeout(r, 50));
+
+      // Should have received replayed session/update notifications
+      const updates = replayedMessages.filter(m => m.includes('"session/update"'));
+      expect(updates.length).toBeGreaterThan(0);
 
       // Prompt should still work on the session — it's alive in the bridge
       const { requestId, promise } = promptAndCollect(ws2, sessionId, 'simple after reconnect');

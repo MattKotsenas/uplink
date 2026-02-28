@@ -65,7 +65,6 @@ export interface AcpClientOptions {
     request: PermissionRequestContext,
     respond: (outcome: PermissionOutcome) => void,
   ) => void;
-  onSessionResumed?: () => void;
   onError?: (error: Error) => void;
 }
 
@@ -114,22 +113,11 @@ export class AcpClient {
 
   async loadSession(sessionId: string): Promise<void> {
     this.ensureReadyState();
-    try {
-      await this.sendRequest("session/load", {
-        sessionId,
-        cwd: this.options.cwd,
-        mcpServers: [],
-      } satisfies SessionLoadParams);
-    } catch (err) {
-      // "already loaded" means the bridge still has this session active
-      if (err instanceof Error && err.message.includes('already loaded')) {
-        this.sessionId = sessionId;
-        this.restoreCachedModels();
-        this.options.onSessionResumed?.();
-        return;
-      }
-      throw err;
-    }
+    await this.sendRequest("session/load", {
+      sessionId,
+      cwd: this.options.cwd,
+      mcpServers: [],
+    } satisfies SessionLoadParams);
     this.sessionId = sessionId;
     localStorage.setItem('uplink-resume-session', sessionId);
   }
@@ -304,14 +292,7 @@ export class AcpClient {
         }
         return;
       } catch (err) {
-        // "already loaded" means the bridge still has this session — treat as success
-        if (err instanceof Error && err.message.includes('already loaded')) {
-          this.sessionId = resumeId;
-          this.restoreCachedModels();
-          this.options.onSessionResumed?.();
-          return;
-        }
-        // Other errors — clear stale key and fall through to new session
+        // session/load failed — clear stale key and fall through to new session
         console.debug('[resume] session/load failed:', err);
         localStorage.removeItem('uplink-resume-session');
       }

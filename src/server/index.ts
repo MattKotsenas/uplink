@@ -155,6 +155,12 @@ export function startServer(options: ServerOptions): ServerResult {
   let cachedInitializeResponse: string | null = null;
   let initializePromise: Promise<string> | null = null;
 
+  // Session replay buffer — remembers the active session's history so we can
+  // replay it when a client reconnects and session/load returns "already loaded".
+  let activeSessionId: string | null = null;
+  let activeSessionResult: string | null = null; // JSON result from session/new or session/load
+  const sessionHistory: string[] = [];
+
   // Resolve bridge command and args once (same for all connections)
   let bridgeCommand: string;
   let bridgeArgs: string[];
@@ -313,6 +319,8 @@ export function startServer(options: ServerOptions): ServerResult {
 
     // Track pending session/new request IDs for session recording
     const pendingSessionNewIds = new Set<number | string>();
+    // Track pending session/load request IDs for capturing the result
+    const pendingSessionLoadIds = new Set<number | string>();
 
     // Bridge -> WebSocket (forward messages, intercept session/new and eager init)
     bridge.onMessage((line) => {
@@ -320,18 +328,46 @@ export function startServer(options: ServerOptions): ServerResult {
       // connected before bridge responded to the eager initialize)
       if (handleEagerInitResponse(line)) return;
 
+      // Buffer session/update notifications for replay on reconnect
+      if (activeSessionId && line.includes('"session/update"')) {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.method === 'session/update' && msg.params?.sessionId === activeSessionId) {
+            sessionHistory.push(line);
+          }
+        } catch { /* ignore */ }
+      }
+
       if (ws.readyState !== WebSocket.OPEN) return;
 
+      // Capture session/new results (for session recording + replay buffer)
       if (pendingSessionNewIds.size > 0) {
         try {
           const msg = JSON.parse(line);
           if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
             pendingSessionNewIds.delete(msg.id);
             recordSession(resolvedCwd, msg.result.sessionId);
+            // Start buffering this session's history
+            activeSessionId = msg.result.sessionId;
+            activeSessionResult = JSON.stringify(msg.result);
+            sessionHistory.length = 0;
           }
         } catch {
           // Not valid JSON — ignore
         }
+      }
+
+      // Capture session/load results (for replay buffer)
+      if (pendingSessionLoadIds.size > 0) {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id != null && pendingSessionLoadIds.has(msg.id) && msg.result) {
+            pendingSessionLoadIds.delete(msg.id);
+            // session/load succeeded — the bridge replayed history as notifications
+            // (which we already buffered above). Save the result for future replays.
+            activeSessionResult = JSON.stringify(msg.result);
+          }
+        } catch { /* ignore */ }
       }
 
       ws.send(line);
@@ -390,6 +426,47 @@ export function startServer(options: ServerOptions): ServerResult {
       // Track session/new requests to record the session for history
       if (parsed?.method === 'session/new' && parsed.id != null) {
         pendingSessionNewIds.add(parsed.id);
+      }
+
+      // Intercept session/load — replay from buffer if same session is already active
+      if (parsed?.method === 'session/load' && parsed.id != null) {
+        const requestedId = parsed.params?.sessionId;
+        if (requestedId && requestedId === activeSessionId && activeSessionResult) {
+          log.session('replaying %d buffered updates for session %s', sessionHistory.length, requestedId);
+          // Fabricate success response
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(activeSessionResult) }));
+          // Replay buffered history
+          for (const line of sessionHistory) {
+            ws.send(line);
+          }
+          return; // Don't forward to bridge
+        }
+        // Different session — clear buffer and track the load
+        if (requestedId) {
+          activeSessionId = requestedId;
+          activeSessionResult = null;
+          sessionHistory.length = 0;
+          pendingSessionLoadIds.add(parsed.id);
+        }
+      }
+
+      // Buffer outgoing prompts as user_message_chunk so replay includes user messages
+      if (parsed?.method === 'session/prompt' && activeSessionId) {
+        const promptParams = parsed.params as { sessionId?: string; prompt?: Array<{ type: string; text?: string }> } | undefined;
+        if (promptParams?.sessionId === activeSessionId && promptParams.prompt) {
+          for (const part of promptParams.prompt) {
+            if (part.type === 'text' && part.text) {
+              sessionHistory.push(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: activeSessionId,
+                  update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: part.text } },
+                },
+              }));
+            }
+          }
+        }
       }
 
       if (activeBridge === bridge) {
