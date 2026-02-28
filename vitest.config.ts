@@ -11,5 +11,11 @@ export default defineConfig({
     environmentMatchGlobs: [
       ["test/component/**", "jsdom"],
     ],
+    coverage: {
+      provider: "v8",
+      include: ["src/**"],
+      exclude: ["src/mock/**"],
+      reporter: ["text", "text-summary"],
+    },
   },
 });
