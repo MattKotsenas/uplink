@@ -504,3 +504,110 @@ describe('ACP bridge full-flow integration', () => {
     TEST_TIMEOUT,
   );
 });
+
+// ── Eager initialize tests ───────────────────────────────────────────
+describe('Eager initialize', () => {
+  it(
+    'returns cached init response when client connects after init completes (fast path)',
+    async () => {
+      // The main test server uses the mock agent which responds instantly.
+      // By the time we connect, eager init is already done.
+      await new Promise((r) => setTimeout(r, 200));
+
+      const ws = await connectWS();
+
+      const t0 = Date.now();
+      const result = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+        ws,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+      const elapsed = Date.now() - t0;
+
+      expect(result.protocolVersion).toBe(1);
+      expect(result.agentInfo?.name).toBe('mock-agent');
+      // Cached response should be near-instant (well under 1s)
+      expect(elapsed).toBeLessThan(1000);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'waits for in-flight init when client connects before init completes (slow path)',
+    async () => {
+      // Create a server with a bridge that delays the initialize response
+      const delayMs = 1500;
+      const delayedInitScript = `
+        const rl = require('readline').createInterface({ input: process.stdin });
+        rl.on('line', (line) => {
+          const msg = JSON.parse(line);
+          if (msg.method === 'initialize') {
+            setTimeout(() => {
+              process.stdout.write(JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: {
+                  protocolVersion: 1,
+                  agentInfo: { name: 'delayed-agent' },
+                  agentCapabilities: {},
+                },
+              }) + '\\n');
+            }, ${delayMs});
+          } else {
+            process.stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: msg.id,
+              result: {},
+            }) + '\\n');
+          }
+        });
+      `;
+
+      const slowResult = startServer({
+        port: 0,
+        copilotCommand: 'node',
+        copilotArgs: ['-e', delayedInitScript],
+      });
+      const slowServer = slowResult.server;
+      const slowToken = slowResult.sessionToken;
+
+      await new Promise<void>((resolve) => {
+        slowServer.listen(0, '127.0.0.1', () => resolve());
+      });
+      const slowPort = (slowServer.address() as AddressInfo).port;
+
+      try {
+        // Connect immediately — eager init is still in-flight
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${slowPort}/ws?token=${encodeURIComponent(slowToken)}`,
+        );
+        await new Promise<void>((resolve, reject) => {
+          ws.on('open', () => resolve());
+          ws.on('error', reject);
+        });
+
+        const t0 = Date.now();
+        const result = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+          ws,
+          'initialize',
+          { protocolVersion: 1, clientCapabilities: {} },
+        );
+        const elapsed = Date.now() - t0;
+
+        expect(result.protocolVersion).toBe(1);
+        expect(result.agentInfo?.name).toBe('delayed-agent');
+        // Should have waited for the delayed init (~1.5s)
+        expect(elapsed).toBeGreaterThan(500);
+
+        ws.close();
+        await new Promise<void>((r) => ws.on('close', () => r()));
+      } finally {
+        slowResult.close();
+        await new Promise<void>((resolve, reject) => {
+          slowServer.close((err) => (err ? reject(err) : resolve()));
+        });
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
