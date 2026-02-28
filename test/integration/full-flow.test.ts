@@ -22,7 +22,6 @@ import type {
 } from '../../src/shared/acp-types.js';
 
 const TEST_TIMEOUT = 15_000;
-const COLLECT_TIMEOUT = 2_000;
 const REQUEST_TIMEOUT = 10_000;
 const MESSAGE_TIMEOUT = 5_000;
 const COPILOT_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'npx';
@@ -224,12 +223,12 @@ function waitForMessage(
   });
 }
 
-function promptWithCollection(
+function promptAndCollect(
   ws: WebSocket,
   sessionId: string,
   text: string,
-  timeout = COLLECT_TIMEOUT,
-) {
+  timeout = 5_000,
+): { requestId: number; promise: Promise<JsonRpcMessage[]> } {
   const requestId = allocateId();
   const payload = {
     jsonrpc: '2.0',
@@ -237,23 +236,25 @@ function promptWithCollection(
     method: 'session/prompt',
     params: createPromptParams(sessionId, text),
   };
-  const promise = sendAndCollect(ws, payload, timeout);
-  return { requestId, promise };
-}
-
-function sendAndCollect(ws: WebSocket, msg: object, timeout = 2_000): Promise<JsonRpcMessage[]> {
-  return new Promise((resolve) => {
+  const promise = new Promise<JsonRpcMessage[]>((resolve, reject) => {
     const messages: JsonRpcMessage[] = [];
     const handler = (data: WebSocket.Data) => {
-      messages.push(JSON.parse(data.toString()) as JsonRpcMessage);
+      const msg = JSON.parse(data.toString()) as JsonRpcMessage;
+      messages.push(msg);
+      if (isResponse(msg) && msg.id === requestId) {
+        ws.off('message', handler);
+        clearTimeout(timer);
+        resolve(messages);
+      }
     };
-    ws.on('message', handler);
-    wsSend(ws, msg);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       ws.off('message', handler);
-      resolve(messages);
+      reject(new Error(`Timed out after ${timeout}ms collecting messages for request ${requestId}`));
     }, timeout);
+    ws.on('message', handler);
+    wsSend(ws, payload);
   });
+  return { requestId, promise };
 }
 
 async function bootstrapSession(ws: WebSocket): Promise<string> {
@@ -280,7 +281,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'simple request');
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'simple request');
       const messages = await promise;
       const chunks = getSessionUpdates(messages).filter(
         (u) => u.sessionUpdate === 'agent_message_chunk',
@@ -300,7 +301,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'tool please');
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'tool please');
       const messages = await promise;
       const updates = getSessionUpdates(messages);
       expect(updates[0]).toMatchObject({ sessionUpdate: 'tool_call', status: 'pending' });
@@ -317,7 +318,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'permission allow');
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'permission allow');
       const permissionRequest = (await waitForMessage(
         ws,
         (msg) => isRequest(msg) && msg.method === 'session/request_permission',
@@ -339,7 +340,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'permission deny');
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'permission deny');
       const permissionRequest = (await waitForMessage(
         ws,
         (msg) => isRequest(msg) && msg.method === 'session/request_permission',
@@ -361,11 +362,11 @@ describe('ACP bridge full-flow integration', () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
 
-      const first = promptWithCollection(ws, sessionId, 'simple turn one');
+      const first = promptAndCollect(ws, sessionId, 'simple turn one');
       const firstMessages = await first.promise;
       expectStopReason(firstMessages, first.requestId, 'end_turn');
 
-      const second = promptWithCollection(ws, sessionId, 'simple turn two');
+      const second = promptAndCollect(ws, sessionId, 'simple turn two');
       const secondMessages = await second.promise;
       expectStopReason(secondMessages, second.requestId, 'end_turn');
     },
@@ -377,7 +378,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'stream please', 2_000);
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'stream please');
       sendNotification(ws, 'session/cancel', { sessionId });
       const messages = await promise;
       expectStopReason(messages, requestId, 'cancelled');
@@ -390,7 +391,7 @@ describe('ACP bridge full-flow integration', () => {
     async () => {
       const ws = await connectWS();
       const sessionId = await bootstrapSession(ws);
-      const { requestId, promise } = promptWithCollection(ws, sessionId, 'simple integrity check');
+      const { requestId, promise } = promptAndCollect(ws, sessionId, 'simple integrity check');
       const messages = await promise;
       expect(messages.length).toBeGreaterThan(0);
       messages.forEach((msg) => {
@@ -463,7 +464,7 @@ describe('ACP bridge full-flow integration', () => {
       ).rejects.toThrow('already loaded');
 
       // Prompt should still work on the session — it's alive in the bridge
-      const { requestId, promise } = promptWithCollection(ws2, sessionId, 'simple after reconnect');
+      const { requestId, promise } = promptAndCollect(ws2, sessionId, 'simple after reconnect');
       const messages = await promise;
       expectStopReason(messages, requestId, 'end_turn');
     },
