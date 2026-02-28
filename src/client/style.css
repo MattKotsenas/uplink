@@ -19,6 +19,7 @@
   --text-sm: 0.8rem;    /* 12.8px — metadata, secondary info */
   --text-base: 0.85rem; /* 13.6px — body text, menus */
   --text-md: 0.9rem;    /* 14.4px — input, buttons, primary content */
+  --text-input: 1rem;   /* 16px   — textarea; ≥16px prevents iOS auto-zoom */
   --text-lg: 1.1rem;    /* 17.6px — subheadings */
   --text-xl: 1.2rem;    /* 19.2px — headings */
 
@@ -100,6 +101,7 @@ body, html {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
+  touch-action: none;          /* prevent stray pinch/pan on the root */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -126,13 +128,15 @@ body, html {
 #app {
   display: flex;
   flex-direction: column;
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: max(0px, calc(50% - 400px));
-  right: max(0px, calc(50% - 400px));
+  height: 100vh;                       /* fallback for older browsers */
+  height: 100dvh;                      /* shrinks when mobile keyboard opens */
+  max-width: 800px;
+  margin: 0 auto;
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
+  overflow: hidden;
+  will-change: height, transform;
+  transition: height 0.25s ease-out, transform 0.25s ease-out;
 }
 
 /* Header */
@@ -223,6 +227,8 @@ body, html {
   flex-direction: column;
   gap: var(--space-4);
   scroll-behavior: smooth;
+  touch-action: pan-y;         /* allow vertical scroll, prevent zoom */
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-container {
@@ -332,7 +338,9 @@ pre code {
 /* Input Area */
 #input-area {
   position: relative;
-  padding: var(--space-5) var(--space-4) max(env(safe-area-inset-bottom, 0px), var(--space-6)) var(--space-4);
+  padding: var(--space-5) var(--space-4)
+           max(env(safe-area-inset-bottom, 0px), env(keyboard-inset-height, 0px), var(--space-6))
+           var(--space-4);
   background-color: var(--bg-secondary);
   border-top: 1px solid var(--border);
   display: flex;
@@ -376,7 +384,7 @@ pre code {
   border-radius: var(--radius-md);
   padding: var(--space-3);
   font-family: var(--font-mono);
-  font-size: var(--text-md);
+  font-size: var(--text-input);  /* ≥16px prevents iOS auto-zoom on focus */
   resize: none;
   min-height: 44px;
   max-height: 150px;
