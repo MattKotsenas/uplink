@@ -42,13 +42,10 @@ function SessionCard({
   supportsResume: boolean;
   onResume: (sessionId: string) => void;
 }) {
-  const text = session.summary ?? session.id;
+  const text = session.title ?? session.id;
   const displayText = text.length > 80 ? text.slice(0, 77) + '…' : text;
 
-  const parts: string[] = [];
-  if (session.branch) parts.push(session.branch);
-  parts.push(formatRelativeTimeInline(session.updatedAt));
-  const meta = parts.join(' · ');
+  const meta = formatRelativeTimeInline(session.updatedAt);
 
   const handleClick = supportsResume
     ? () => { closeModal(); onResume(session.id); }

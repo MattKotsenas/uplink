@@ -390,6 +390,7 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
         agentCapabilities: {
           loadSession: true,
           promptCapabilities: { image: true, audio: false, embeddedContext: true },
+          sessionCapabilities: { list: {} },
         },
         agentInfo: { name: "mock-agent", title: "Mock Agent", version: "0.1.0" },
         authMethods: [],
@@ -431,6 +432,11 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
         sessionId = params.sessionId;
         sendResponse(msg.id, {});
       }
+      break;
+    }
+    case "session/list": {
+      // Return an empty list — mock agent doesn't persist sessions
+      sendResponse(msg.id, { sessions: [] });
       break;
     }
     case "session/prompt": {

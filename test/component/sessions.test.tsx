@@ -17,14 +17,14 @@ function makeSessions(): SessionInfo[] {
   return [
     {
       id: 's-1',
-      summary: 'Fix authentication bug',
-      branch: 'main',
+      cwd: '/projects/test',
+      title: 'Fix authentication bug',
       updatedAt: new Date().toISOString(),
     },
     {
       id: 's-2',
-      summary: 'Add dark mode',
-      branch: 'feature/dark',
+      cwd: '/projects/test',
+      title: 'Add dark mode',
       updatedAt: new Date(Date.now() - 3600000).toISOString(),
     },
   ];

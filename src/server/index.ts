@@ -2,12 +2,12 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { exec } from 'node:child_process';
-import { readdirSync, existsSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
 import { homedir } from 'node:os';
-import { getRecentSessions, recordSession, renameSession } from './sessions.js';
+import type { SessionInfo } from '../shared/acp-types.js';
 import createDebug from 'debug';
 
 const log = {
@@ -115,16 +115,34 @@ export function startServer(options: ServerOptions): ServerResult {
     res.json({ token: sessionToken, cwd: resolvedCwd });
   });
 
-  // Sessions endpoint
+  // Sessions endpoint — forwards session/list to the CLI bridge and merges
+  // with in-memory supplement for sessions created during this bridge lifetime.
   app.get('/api/sessions', async (req, res) => {
     const cwd = req.query.cwd as string | undefined;
     if (!cwd) {
       res.status(400).json({ error: 'Missing required query parameter: cwd' });
       return;
     }
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-    const sessions = await getRecentSessions(cwd, limit);
-    res.json({ sessions });
+
+    // Collect sessions from CLI via session/list RPC (if bridge is alive)
+    let cliSessions: SessionInfo[] = [];
+    if (activeBridge?.isAlive()) {
+      try {
+        cliSessions = await listSessionsViaBridge(activeBridge, cwd);
+      } catch (err) {
+        log.session('session/list RPC failed: %O', err);
+      }
+    }
+
+    // Merge with in-memory supplement (sessions created this bridge lifetime)
+    const cliIds = new Set(cliSessions.map(s => s.id));
+    const supplement = [...recentSessions.values()]
+      .filter(s => s.cwd === cwd && !cliIds.has(s.id));
+
+    const merged = [...cliSessions, ...supplement]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    res.json({ sessions: merged });
   });
   
   // Serve static files if configured
@@ -160,6 +178,14 @@ export function startServer(options: ServerOptions): ServerResult {
   // Keyed by session ID; survives session switches within the same bridge.
   let activeSessionId: string | null = null;
   const sessionBuffers = new Map<string, { result: string; history: string[] }>();
+
+  // In-memory supplement for session listing. Tracks sessions created during
+  // this bridge's lifetime because the CLI's session/list doesn't index them
+  // until the next CLI process restart.
+  const recentSessions = new Map<string, SessionInfo>();
+
+  /** Internal request ID counter for server-originated RPC calls to the bridge. */
+  let serverRpcId = 100_000;
 
   // Resolve bridge command and args once (same for all connections)
   let bridgeCommand: string;
@@ -219,6 +245,7 @@ export function startServer(options: ServerOptions): ServerResult {
         // Clear session buffers — sessions are gone with the bridge
         activeSessionId = null;
         sessionBuffers.clear();
+        recentSessions.clear();
       }
     });
 
@@ -230,6 +257,66 @@ export function startServer(options: ServerOptions): ServerResult {
     });
 
     return bridge;
+  }
+
+  // Pending server-originated RPC callbacks — responses are intercepted in
+  // the bridge→client message handler (just like pendingSessionNewIds).
+  const pendingServerRpcs = new Map<number | string, {
+    resolve: (result: unknown) => void;
+    reject: (err: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+
+  /**
+   * Send a JSON-RPC request from the server to the bridge and await the result.
+   * The response is intercepted in the bridge→client onMessage handler.
+   */
+  function sendBridgeRpc<T>(method: string, params: unknown): Promise<T> {
+    const id = ++serverRpcId;
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingServerRpcs.delete(id);
+        reject(new Error(`Bridge RPC timeout: ${method}`));
+      }, 10_000);
+
+      pendingServerRpcs.set(id, {
+        resolve: resolve as (result: unknown) => void,
+        reject,
+        timeout,
+      });
+
+      activeBridge?.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+    });
+  }
+
+  /**
+   * Send session/list RPC to the bridge and collect all pages.
+   */
+  async function listSessionsViaBridge(bridge: Bridge, cwd: string): Promise<SessionInfo[]> {
+    if (!bridge.isAlive()) return [];
+
+    const all: SessionInfo[] = [];
+    let cursor: string | undefined;
+    const MAX_PAGES = 5;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const params: Record<string, string> = { cwd };
+      if (cursor) params.cursor = cursor;
+
+      const result = await sendBridgeRpc<{
+        sessions: Array<{ sessionId: string; cwd: string; title?: string; updatedAt: string }>;
+        nextCursor?: string;
+      }>('session/list', params);
+
+      for (const s of result.sessions ?? []) {
+        all.push({ id: s.sessionId, cwd: s.cwd, title: s.title ?? null, updatedAt: s.updatedAt });
+      }
+
+      if (!result.nextCursor || result.sessions.length === 0) break;
+      cursor = result.nextCursor;
+    }
+
+    return all;
   }
 
   // Eagerly start bridge and send initialize before any client connects.
@@ -343,18 +430,39 @@ export function startServer(options: ServerOptions): ServerResult {
         } catch { /* ignore */ }
       }
 
+      // Intercept responses to server-originated RPCs (e.g. session/list)
+      if (pendingServerRpcs.size > 0) {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id != null && pendingServerRpcs.has(msg.id)) {
+            const rpc = pendingServerRpcs.get(msg.id)!;
+            pendingServerRpcs.delete(msg.id);
+            clearTimeout(rpc.timeout);
+            if (msg.error) rpc.reject(new Error(msg.error.message ?? 'RPC error'));
+            else rpc.resolve(msg.result);
+            return; // Don't forward server-internal responses to client
+          }
+        } catch { /* ignore */ }
+      }
+
       if (ws.readyState !== WebSocket.OPEN) return;
 
-      // Capture session/new results (for session recording + replay buffer)
+      // Capture session/new results (for replay buffer + in-memory listing)
       if (pendingSessionNewIds.size > 0) {
         try {
           const msg = JSON.parse(line);
           if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
             pendingSessionNewIds.delete(msg.id);
-            recordSession(resolvedCwd, msg.result.sessionId);
             const newSid = msg.result.sessionId;
             activeSessionId = newSid;
             sessionBuffers.set(newSid, { result: JSON.stringify(msg.result), history: [] });
+            // Track in-memory for session listing (CLI won't index until restart)
+            recentSessions.set(newSid, {
+              id: newSid,
+              cwd: resolvedCwd,
+              title: null,
+              updatedAt: new Date().toISOString(),
+            });
           }
         } catch {
           // Not valid JSON — ignore
@@ -398,7 +506,25 @@ export function startServer(options: ServerOptions): ServerResult {
       if (parsed?.method === 'uplink/rename_session') {
         const { sessionId, summary } = parsed.params ?? {};
         if (parsed.id !== undefined && sessionId && summary) {
-          renameSession(sessionId, summary);
+          // Write summary to CLI's workspace.yaml so it persists across restarts
+          const wsYamlPath = path.join(homedir(), '.copilot', 'session-state', sessionId, 'workspace.yaml');
+          try {
+            if (existsSync(wsYamlPath)) {
+              let yaml = readFileSync(wsYamlPath, 'utf8');
+              // Replace existing summary line or append one
+              if (/^summary:\s/m.test(yaml)) {
+                yaml = yaml.replace(/^summary:\s.*$/m, `summary: ${summary}`);
+              } else {
+                yaml = yaml.trimEnd() + `\nsummary: ${summary}\n`;
+              }
+              writeFileSync(wsYamlPath, yaml);
+            }
+          } catch (err) {
+            log.session('failed to write workspace.yaml for rename: %O', err);
+          }
+          // Also update in-memory supplement
+          const info = recentSessions.get(sessionId);
+          if (info) info.title = summary;
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }));
         } else if (parsed.id !== undefined) {
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, error: { code: -32602, message: 'Missing sessionId or summary' } }));

@@ -57,6 +57,7 @@ export interface AgentCapabilities {
   loadSession?: boolean;
   promptCapabilities?: { image?: boolean; audio?: boolean; embeddedContext?: boolean };
   mcp?: { http?: boolean; sse?: boolean };
+  sessionCapabilities?: { list?: Record<string, never> };
 }
 
 // ─── Info ─────────────────────────────────────────────────────────────
@@ -405,13 +406,14 @@ export function isSessionUpdatePlan(
 
 // ─── Session Info (returned by GET /api/sessions) ─────────────────────
 
-/** Metadata for a past session, as returned by the sessions API. */
+/**
+ * Metadata for a past session, as returned by the sessions API.
+ * Aligned with the CLI's `session/list` response format.
+ */
 export interface SessionInfo {
   id: string;
   cwd: string;
-  branch: string | null;
-  summary: string | null;
-  createdAt: string;
+  title: string | null;
   updatedAt: string;
 }
 
