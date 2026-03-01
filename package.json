@@ -37,6 +37,7 @@
     "debug": "^4.4.3",
     "express": "^5.2.1",
     "highlight.js": "^11.11.1",
+    "marked": "^17.0.3",
     "material-symbols": "^0.40.2",
     "preact": "^10.28.4",
     "qrcode-terminal": "^0.12.0",

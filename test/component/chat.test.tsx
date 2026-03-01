@@ -8,7 +8,9 @@ afterEach(cleanup);
 
 describe('renderMarkdown', () => {
   it('escapes HTML entities', () => {
-    expect(renderMarkdown('<script>')).toBe('&lt;script&gt;');
+    const result = renderMarkdown('<script>');
+    expect(result).not.toContain('<script>');
+    expect(result).toContain('&lt;script&gt;');
   });
 
   it('renders inline code', () => {
@@ -48,6 +50,37 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(md);
     expect(result).toContain('<pre><code>');
     expect(result).toContain('hello');
+  });
+
+  it('renders tables', () => {
+    const md = '| Name | Age |\n| --- | --- |\n| Alice | 30 |';
+    const result = renderMarkdown(md);
+    expect(result).toContain('<table>');
+    expect(result).toContain('<th>');
+    expect(result).toContain('Name');
+    expect(result).toContain('<td>');
+    expect(result).toContain('Alice');
+  });
+
+  it('renders unordered lists', () => {
+    const md = '- one\n- two\n- three';
+    const result = renderMarkdown(md);
+    expect(result).toContain('<ul>');
+    expect(result).toContain('<li>');
+    expect(result).toContain('one');
+  });
+
+  it('renders blockquotes', () => {
+    const md = '> hello world';
+    const result = renderMarkdown(md);
+    expect(result).toContain('<blockquote>');
+    expect(result).toContain('hello world');
+  });
+
+  it('renders headings', () => {
+    const result = renderMarkdown('## Heading');
+    expect(result).toContain('<h2');
+    expect(result).toContain('Heading');
   });
 });
 
