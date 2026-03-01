@@ -1032,3 +1032,124 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
+
+/* ─── Tab Bar (multi-dir mode) ──────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.tab-bar-item:hover {
+  color: var(--text-primary);
+}
+
+.tab-bar-item.active {
+  color: var(--accent);
+}
+
+.tab-bar-item .material-symbols-outlined {
+  font-size: var(--text-xl);
+}
+
+.tab-bar-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* When tab-bar is present, input-area shouldn't add bottom safe-area (tab-bar does it) */
+.has-tab-bar #input-area {
+  padding-bottom: var(--space-6);
+}
+
+.directories-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.directories-heading {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2) 0;
+  color: var(--text-primary);
+}
+
+.directory-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.directory-card:hover {
+  border-color: var(--accent);
+  background-color: var(--accent-subtle);
+}
+
+.directory-card-icon {
+  color: var(--accent);
+  font-size: var(--text-xl);
+  flex-shrink: 0;
+}
+
+.directory-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.directory-card-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-card-path {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-card-active {
+  border-color: var(--accent);
+}
+
+.directory-card-active .directory-card-name::after {
+  content: " ●";
+  color: var(--success);
+  font-size: var(--text-xs);
+}
