@@ -206,7 +206,7 @@ test('/model command is sent as prompt to CLI', async ({ page }) => {
   await expect(userMsg).toBeVisible({ timeout: 5000 });
 
   // Agent should respond (mock will echo back)
-  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.message.agent').first()).toBeVisible({ timeout: 10000 });
 });
 
 test('session is preserved across /model commands', async ({ page }) => {
@@ -216,7 +216,7 @@ test('session is preserved across /model commands', async ({ page }) => {
   // Send a message so a session is established
   await page.locator('#prompt-input').fill('hello');
   await page.locator('#send-btn').click();
-  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.message.agent').first()).toBeVisible({ timeout: 10000 });
 
   // Verify session is in localStorage
   const sessionBefore = await page.evaluate(() =>
@@ -269,7 +269,7 @@ test('thinking/reasoning display', async ({ page }) => {
   await expect(thinking).toContainText('analyzed the problem', { timeout: 5000 });
 
   // Verify the agent message also rendered
-  await expect(page.locator('.message.agent')).toContainText('Based on my analysis');
+  await expect(page.locator('.message.agent').first()).toContainText('Based on my analysis');
 });
 
 test('tool calls render inline between messages in timeline order', async ({ page }) => {
