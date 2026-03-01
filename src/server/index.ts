@@ -221,7 +221,8 @@ export function startServer(options: ServerOptions): ServerResult {
   const server = createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  let activeSocket: WebSocket | null = null;
+  // Track active sockets per cwd (one per directory in multi-dir mode)
+  const activeSockets = new Map<string, WebSocket>();
 
   /** Internal request ID counter for server-originated RPC calls. */
   let serverRpcId = 100_000;
@@ -287,8 +288,9 @@ export function startServer(options: ServerOptions): ServerResult {
     // When bridge dies on its own, clean up
     bridge.onClose((code) => {
       log.bridge('closed with code %d (cwd: %s)', code, ctx.cwd);
-      if (activeSocket?.readyState === WebSocket.OPEN) {
-        activeSocket.close(1000, 'Bridge closed');
+      const sock = activeSockets.get(ctx.cwd);
+      if (sock?.readyState === WebSocket.OPEN) {
+        sock.close(1000, 'Bridge closed');
       }
       if (ctx.bridge === bridge) {
         ctx.bridge = null;
@@ -305,8 +307,9 @@ export function startServer(options: ServerOptions): ServerResult {
 
     bridge.onError((err) => {
       log.bridge('error: %O', err);
-      if (activeSocket?.readyState === WebSocket.OPEN) {
-        activeSocket.close(1011, 'Bridge error');
+      const sock = activeSockets.get(ctx.cwd);
+      if (sock?.readyState === WebSocket.OPEN) {
+        sock.close(1011, 'Bridge error');
       }
     });
 
@@ -437,14 +440,15 @@ export function startServer(options: ServerOptions): ServerResult {
       return;
     }
 
-    // Enforce single connection (close old socket, but DON'T kill bridge)
-    if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-      log.server('new connection replacing existing one');
-      activeSocket.close();
+    // Enforce single connection per cwd (close old socket for same dir, DON'T touch others)
+    const existingSocket = activeSockets.get(requestedCwd);
+    if (existingSocket && existingSocket.readyState === WebSocket.OPEN) {
+      log.server('new connection replacing existing one for %s', requestedCwd);
+      existingSocket.close();
     }
 
     log.server('client connected (cwd: %s)', requestedCwd);
-    activeSocket = ws;
+    activeSockets.set(requestedCwd, ws);
 
     // Get or create the bridge context for this directory
     const ctx = getOrCreateContext(requestedCwd);
@@ -656,9 +660,9 @@ export function startServer(options: ServerOptions): ServerResult {
     });
 
     ws.on('close', () => {
-      log.server('client disconnected');
-      if (activeSocket === ws) {
-        activeSocket = null;
+      log.server('client disconnected (cwd: %s)', requestedCwd);
+      if (activeSockets.get(requestedCwd) === ws) {
+        activeSockets.delete(requestedCwd);
       }
       // Bridge stays alive — don't kill it
     });
@@ -685,7 +689,7 @@ export function startServer(options: ServerOptions): ServerResult {
       }
     }
 
-    activeSocket = null;
+    activeSockets.clear();
   };
 
   const exposedInit = primaryCtx.initializePromise!.then(() => {});

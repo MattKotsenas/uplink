@@ -181,9 +181,9 @@ describe('AcpClient Bug Fixes', () => {
 
    describe('Session resume via localStorage', () => {
     it('should call session/load when uplink-resume-session is set and agent supports it', async () => {
-      // Mock localStorage to return a resume session ID
+      // Mock localStorage to return a resume session ID (key is scoped by cwd)
       (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
-        if (key === 'uplink-resume-session') return 'sess-to-resume';
+        if (key === 'uplink-resume-session:/test/cwd') return 'sess-to-resume';
         return null;
       });
 
@@ -206,7 +206,7 @@ describe('AcpClient Bug Fixes', () => {
       expect(calls).not.toContain('session/new');
       expect(client.currentSessionId).toBe('sess-to-resume');
       // Resume key should be preserved for future refreshes
-      expect(global.localStorage.removeItem).not.toHaveBeenCalledWith('uplink-resume-session');
+      expect(global.localStorage.removeItem).not.toHaveBeenCalledWith('uplink-resume-session:/test/cwd');
     });
 
     // "already loaded" is now handled server-side (server replays buffered history).
@@ -214,7 +214,7 @@ describe('AcpClient Bug Fixes', () => {
 
     it('should fall back to session/new when session/load fails with non-resume error', async () => {
       (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
-        if (key === 'uplink-resume-session') return 'sess-broken';
+        if (key === 'uplink-resume-session:/test/cwd') return 'sess-broken';
         return null;
       });
 
@@ -235,12 +235,12 @@ describe('AcpClient Bug Fixes', () => {
       expect(calls).toContain('session/new');
       expect(client.currentSessionId).toBe('sess-new');
       // Stale resume key should be cleaned up on failure
-      expect(global.localStorage.removeItem).toHaveBeenCalledWith('uplink-resume-session');
+      expect(global.localStorage.removeItem).toHaveBeenCalledWith('uplink-resume-session:/test/cwd');
     });
 
     it('should skip session/load when agent does not support it', async () => {
       (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
-        if (key === 'uplink-resume-session') return 'sess-no-support';
+        if (key === 'uplink-resume-session:/test/cwd') return 'sess-no-support';
         return null;
       });
 
