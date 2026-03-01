@@ -302,6 +302,60 @@ body, html {
   white-space: pre-wrap;
 }
 
+/* Strip extra margin from first/last block elements inside messages */
+.message .content > :first-child { margin-top: 0; }
+.message .content > :last-child { margin-bottom: 0; }
+
+/* Lists */
+.message .content ul,
+.message .content ol {
+  padding-left: var(--space-5);
+  margin: var(--space-2) 0;
+}
+
+/* Blockquotes */
+.message .content blockquote {
+  border-left: 3px solid var(--accent);
+  margin: var(--space-2) 0;
+  padding: var(--space-1) var(--space-4);
+  color: var(--text-secondary);
+}
+
+/* Headings */
+.message .content h1,
+.message .content h2,
+.message .content h3,
+.message .content h4 {
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+/* Horizontal rules */
+.message .content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-3) 0;
+}
+
+/* Tables (GFM) — wrapper handles overflow so table stays one unit */
+.message .content table {
+  border-collapse: collapse;
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+  max-width: 100%;
+}
+
+.message .content th,
+.message .content td {
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.message .content th {
+  background-color: var(--bg-tertiary);
+  font-weight: 700;
+}
+
 /* Code Blocks */
 pre {
   background-color: var(--bg-tertiary);
