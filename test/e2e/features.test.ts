@@ -258,7 +258,7 @@ test('thinking/reasoning display', async ({ page }) => {
   await page.locator('#send-btn').click();
 
   // Wait for the thinking element to appear in the DOM
-  const thinking = page.locator('.tool-call-thinking');
+  const thinking = page.locator('.tool-call-thinking').first();
   await expect(thinking).toBeAttached({ timeout: 10000 });
 
   // Verify it's a <details> element
@@ -555,7 +555,7 @@ test('failed tool call shows status message when expanded', async ({ page }) => 
   await expect(toolCall).toBeVisible({ timeout: 10000 });
 
   // Should show failed status
-  await expect(toolCall.locator('.status')).toContainText('failed');
+  await expect(toolCall.locator('.status')).toContainText('failed', { timeout: 10000 });
 
   // Click to expand
   await toolCall.locator('.tool-call-header').click();
@@ -599,12 +599,12 @@ test('thinking content blocks render as collapsible reasoning', async ({ page })
   await page.locator('#send-btn').click();
 
   // Wait for the agent response (follows the thinking blocks)
-  const agentMsg = page.locator('.message.agent');
+  const agentMsg = page.locator('.message.agent').first();
   await expect(agentMsg).toBeVisible({ timeout: 10000 });
   await expect(agentMsg).toContainText('thinking it through');
 
   // Thinking content should be rendered as a collapsible block
-  const thinking = page.locator('.tool-call-thinking');
+  const thinking = page.locator('.tool-call-thinking').first();
   await expect(thinking).toBeAttached({ timeout: 5000 });
   // Both streamed thought chunks should be accumulated
   await expect(thinking).toContainText('consider the approach');

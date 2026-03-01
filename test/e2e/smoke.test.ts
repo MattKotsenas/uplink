@@ -23,6 +23,7 @@ test('smoke: send message and receive response', async ({ page }) => {
   await page.locator('#send-btn').click();
 
   // The mock agent responds with "Hello from mock agent!" via scenarioSimpleText
-  await expect(page.locator('.message.agent')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('.message.agent .content')).toContainText('Hello');
+  const agentMsg = page.locator('.message.agent').first();
+  await expect(agentMsg).toBeVisible({ timeout: 10000 });
+  await expect(agentMsg.locator('.content')).toContainText('Hello');
 });

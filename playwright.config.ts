@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: 'test/e2e',
   timeout: 30000,
   retries: 0,
+  workers: 1, // tests share a single mock-agent bridge; parallelism causes interleaving
   use: {
     baseURL: 'http://localhost:3000',
   },
