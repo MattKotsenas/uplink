@@ -86,6 +86,7 @@ export const commands: SlashCommand[] = [
       { label: 'List', value: 'list' },
     ],
   },
+  { name: 'clear', description: 'Clear conversation', kind: 'client' },
 ];
 
 export interface ParsedCommand {

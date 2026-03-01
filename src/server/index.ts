@@ -505,6 +505,18 @@ export function startServer(options: ServerOptions): ServerResult {
         return;
       }
 
+      if (parsed?.method === 'uplink/clear_history') {
+        const sid = parsed.params?.sessionId;
+        if (sid) {
+          const buf = sessionBuffers.get(sid);
+          if (buf) buf.history = [];
+        }
+        if (parsed.id !== undefined) {
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }));
+        }
+        return;
+      }
+
       if (parsed?.method === 'uplink/rename_session') {
         const { sessionId, summary } = parsed.params ?? {};
         if (parsed.id !== undefined && sessionId && summary) {
