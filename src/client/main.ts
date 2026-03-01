@@ -5,16 +5,21 @@ import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js'
 import { fetchSessions, openSessionsModal, SessionsModal } from './ui/sessions.js';
 import { CommandPalette, type PaletteItem } from './ui/command-palette.js';
 import { getCompletions, parseSlashCommand, setAvailableModels, findModelName } from './slash-commands.js';
+import { TabBar, type TabId } from './ui/tab-bar.js';
+import { DirectoriesView } from './ui/directories.js';
 import { render, h } from 'preact';
 import 'material-symbols/outlined.css';
 
 // ─── DOM References ───────────────────────────────────────────────────
 
 const chatArea = document.getElementById('chat-area')!;
+const directoriesMount = document.getElementById('directories-mount')!;
+const tabBarMount = document.getElementById('tab-bar-mount')!;
 const promptInput = document.getElementById('prompt-input') as HTMLTextAreaElement;
 const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
 const modelLabel = document.getElementById('model-label')!;
+const inputArea = document.getElementById('input-area')!;
 
 let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 
@@ -50,6 +55,83 @@ function initTheme(): void {
 }
 
 initTheme();
+
+// ─── Multi-Dir State ──────────────────────────────────────────────────
+
+let multiDirMode = false;
+let configuredDirs: string[] = [];
+let activeTab: TabId = 'directories';
+let activeDirCwd: string | null = null;
+let sessionToken: string = '';
+
+/** Extract short display name from path (last 2 segments). */
+function shortDirName(dir: string): string {
+  const parts = dir.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.slice(-2).join('/') || dir;
+}
+
+function renderTabBar(): void {
+  if (!multiDirMode) return;
+  render(
+    h(TabBar, {
+      activeTab,
+      onTabChange: switchTab,
+      chatDirName: activeDirCwd ? shortDirName(activeDirCwd) : undefined,
+    }),
+    tabBarMount,
+  );
+}
+
+function renderDirectories(): void {
+  render(
+    h(DirectoriesView, {
+      dirs: configuredDirs,
+      activeCwd: activeDirCwd ?? undefined,
+      onSelect: (dir: string) => connectToDirectory(dir),
+    }),
+    directoriesMount,
+  );
+}
+
+function switchTab(tab: TabId): void {
+  activeTab = tab;
+  if (tab === 'directories') {
+    chatArea.hidden = true;
+    inputArea.hidden = true;
+    directoriesMount.hidden = false;
+    renderDirectories();
+  } else {
+    chatArea.hidden = false;
+    inputArea.hidden = false;
+    directoriesMount.hidden = true;
+  }
+  renderTabBar();
+}
+
+async function connectToDirectory(dir: string): Promise<void> {
+  // If same dir, just switch to chat tab
+  if (dir === activeDirCwd && client) {
+    switchTab('chat');
+    return;
+  }
+
+  // Disconnect existing client
+  if (client) {
+    client.disconnect();
+    client = null;
+  }
+
+  activeDirCwd = dir;
+  clearConversation();
+
+  // Create a new client for this directory
+  const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(sessionToken)}&cwd=${encodeURIComponent(dir)}`;
+  client = createAcpClient(wsUrl, dir);
+  clientCwd = dir;
+
+  switchTab('chat');
+  await client.connect();
+}
 
 // ─── Service Worker ───────────────────────────────────────────────────
 
@@ -117,13 +199,7 @@ function updateConnectionStatus(state: ConnectionState): void {
   conversation.notify();
 }
 
-async function initializeClient() {
-  const tokenResponse = await fetch('/api/token');
-  const { token, cwd } = await tokenResponse.json();
-  clientCwd = cwd;
-
-  const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
-
+function createAcpClient(wsUrl: string, cwd: string): AcpClient {
   return new AcpClient({
     wsUrl,
     cwd,
@@ -478,9 +554,36 @@ if ('virtualKeyboard' in navigator) {
 
 updateConnectionStatus('disconnected');
 
-initializeClient().then((c) => {
-  client = c;
-  client.connect();
-}).catch((err) => {
+async function boot(): Promise<void> {
+  // Fetch token and config in parallel
+  const [tokenRes, configRes] = await Promise.all([
+    fetch('/api/token'),
+    fetch('/api/config'),
+  ]);
+  const { token, cwd } = await tokenRes.json();
+  const config = await configRes.json();
+
+  sessionToken = token;
+  clientCwd = cwd;
+
+  if (config.multiDir && config.dirs.length > 0) {
+    // Multi-directory mode
+    multiDirMode = true;
+    configuredDirs = config.dirs;
+    document.getElementById('app')!.classList.add('has-tab-bar');
+
+    // Start on directories tab
+    switchTab('directories');
+    renderTabBar();
+  } else {
+    // Single-directory mode (original behavior)
+    const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(token)}`;
+    client = createAcpClient(wsUrl, cwd);
+    activeDirCwd = cwd;
+    await client.connect();
+  }
+}
+
+boot().catch((err) => {
   console.error('Failed to initialize client:', err);
 });
