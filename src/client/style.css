@@ -160,6 +160,20 @@ body, html {
   border-radius: var(--radius-md);
 }
 
+.dir-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background-color: var(--bg-tertiary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 #connection-status {
   font-size: var(--text-sm);
   display: flex;

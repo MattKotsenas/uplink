@@ -20,6 +20,7 @@ const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
 const modelLabel = document.getElementById('model-label')!;
 const inputArea = document.getElementById('input-area')!;
+const dirLabel = document.getElementById('dir-label')!;
 
 let yoloMode = localStorage.getItem('uplink-yolo') === 'true';
 
@@ -68,6 +69,16 @@ let sessionToken: string = '';
 function shortDirName(dir: string): string {
   const parts = dir.replace(/\\/g, '/').split('/').filter(Boolean);
   return parts.slice(-2).join('/') || dir;
+}
+
+function updateDirLabel(dir: string | null): void {
+  if (!multiDirMode || !dir) {
+    dirLabel.hidden = true;
+    return;
+  }
+  dirLabel.textContent = shortDirName(dir);
+  dirLabel.title = dir;
+  dirLabel.hidden = false;
 }
 
 function renderTabBar(): void {
@@ -123,6 +134,7 @@ async function connectToDirectory(dir: string): Promise<void> {
 
   activeDirCwd = dir;
   clearConversation();
+  updateDirLabel(dir);
 
   // Create a new client for this directory
   const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(sessionToken)}&cwd=${encodeURIComponent(dir)}`;
