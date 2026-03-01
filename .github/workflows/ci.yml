@@ -39,7 +39,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install chromium --with-deps
+      - run: npx playwright install chromium webkit --with-deps
       - run: npm run build
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
