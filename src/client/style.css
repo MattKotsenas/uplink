@@ -2,7 +2,6 @@
 @import '@fontsource/jetbrains-mono/700.css';
 
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
 
   /* Spacing scale (4px base) */
@@ -28,7 +27,6 @@
   --radius-md: 6px;     /* cards, inputs, buttons */
   --radius-lg: 8px;     /* messages, dropdowns */
   --radius-xl: 12px;    /* modal panels */
-  --radius-full: 9999px; /* pills, toggles */
 }
 
 html.dark {
@@ -44,9 +42,6 @@ html.dark {
   --danger: #f38ba8;
   --success: #a6e3a1;
   --warning: #f9e2af;
-  --warning-subtle: rgb(249 226 175 / 10%);
-  --warning-glow-soft: rgb(249 226 175 / 15%);
-  --warning-glow: rgb(249 226 175 / 30%);
   --info: #89b4fa;
   --peach: #fab387;
   --user-msg-bg: #45475a;
@@ -68,9 +63,6 @@ html.light {
   --danger: #d20f39;
   --success: #40a02b;
   --warning: #df8e1d;
-  --warning-subtle: rgb(223 142 29 / 10%);
-  --warning-glow-soft: rgb(223 142 29 / 15%);
-  --warning-glow: rgb(223 142 29 / 30%);
   --info: #1e66f5;
   --peach: #fe640b;
   --user-msg-bg: #ccd0da;
@@ -502,7 +494,7 @@ pre code {
 
 .command-palette-item:hover,
 .command-palette-item.selected {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-tertiary);
 }
 
 .command-palette-label {
