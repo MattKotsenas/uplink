@@ -757,3 +757,39 @@ test('clicking /plan in palette previews plan border immediately', async ({ page
   // Border should preview plan mode immediately
   await expect(html).toHaveAttribute('data-mode', 'plan');
 });
+
+// ─── Mobile-specific tests ────────────────────────────────────────────
+
+test('input font-size is at least 16px to prevent iOS auto-zoom', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#prompt-input')).toBeVisible();
+
+  const fontSize = await page.locator('#prompt-input').evaluate(
+    (el) => parseFloat(getComputedStyle(el).fontSize),
+  );
+  // iOS auto-zooms inputs with font-size < 16px
+  expect(fontSize).toBeGreaterThanOrEqual(16);
+});
+
+test('viewport meta prevents user scaling to avoid stuck-zoom states', async ({ page }) => {
+  await page.goto('/');
+
+  const content = await page.locator('meta[name="viewport"]').getAttribute('content');
+  expect(content).toContain('maximum-scale=1');
+  expect(content).toContain('user-scalable=no');
+});
+
+test('app layout uses flex column without position fixed', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).toBeVisible();
+
+  const styles = await page.locator('#app').evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { position: s.position, display: s.display, flexDirection: s.flexDirection };
+  });
+
+  // position:fixed prevents dvh from working with mobile keyboards
+  expect(styles.position).not.toBe('fixed');
+  expect(styles.display).toBe('flex');
+  expect(styles.flexDirection).toBe('column');
+});
