@@ -58,6 +58,23 @@ describe('slash-commands', () => {
     });
   });
 
+  describe('/clear command', () => {
+    it('/clear is registered as a client command', () => {
+      const cmd = commands.find((c) => c.name === 'clear');
+      expect(cmd).toBeDefined();
+      expect(cmd!.kind).toBe('client');
+    });
+
+    it('/clear parses as complete with no options', () => {
+      const parsed = parseSlashCommand('/clear');
+      expect(parsed).toBeDefined();
+      expect(parsed!.command).toBe('/clear');
+      expect(parsed!.kind).toBe('client');
+      expect(parsed!.complete).toBe(true);
+      expect(parsed!.arg).toBe('');
+    });
+  });
+
   describe('mode commands are client-side', () => {
     it('/agent is a client command', () => {
       const cmd = commands.find((c) => c.name === 'agent');

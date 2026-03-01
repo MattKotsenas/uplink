@@ -460,6 +460,9 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
         await scenarioThinking(msg.id);
       } else if (text.startsWith("refuse")) {
         scenarioRefusal(msg.id);
+      } else if (text.startsWith("/clear") || text.startsWith("clear")) {
+        sendPromptChunk(msg.id, "Conversation cleared.");
+        respondToPrompt(msg.id, { stopReason: "end_turn" } satisfies SessionPromptResult);
       } else if (text === "continue") {
         // Autopilot continuation — respond with final message, no more turns
         sendPromptChunk(msg.id, "Done, no more work to do.");

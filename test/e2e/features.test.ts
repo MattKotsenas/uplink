@@ -67,6 +67,26 @@ test('dark/light mode toggle via /theme command', async ({ page }) => {
   await expect(html).toHaveClass(initialTheme!);
 });
 
+test('/clear removes messages from conversation', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Send a message so there's something to clear
+  await page.locator('#prompt-input').fill('hello');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.agent').first()).toBeVisible({ timeout: 10000 });
+
+  // Verify messages exist
+  await expect(page.locator('.message.user')).toHaveCount(1);
+
+  // Clear the conversation
+  await page.locator('#prompt-input').fill('/clear');
+  await page.locator('#send-btn').click();
+
+  // Old user messages should be gone; the /clear prompt produces a new agent response
+  await expect(page.locator('.message.user')).toHaveCount(0);
+});
+
 test('slash command palette appears on / keystroke', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
@@ -82,7 +102,7 @@ test('slash command palette appears on / keystroke', async ({ page }) => {
   await expect(palette).toBeVisible();
 
   // Should show available commands
-  await expect(palette.locator('.command-palette-item')).toHaveCount(7); // 7 commands
+  await expect(palette.locator('.command-palette-item')).toHaveCount(8); // 8 commands
 
   // Type more to filter
   await input.fill('/mo');

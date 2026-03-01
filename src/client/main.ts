@@ -397,8 +397,26 @@ function handleClientCommand(command: string, arg: string): string | undefined {
       applyMode('autopilot');
       conversation.addSystemMessage('Switched to autopilot mode');
       return arg || undefined;
+    case '/clear':
+      handleClearCommand();
+      return undefined;
   }
   return undefined;
+}
+
+async function handleClearCommand(): Promise<void> {
+  if (!client) return;
+  clearConversation();
+  // Clear server-side replay buffer
+  if (client.currentSessionId) {
+    client.sendRawRequest('uplink/clear_history', { sessionId: client.currentSessionId }).catch(() => {});
+  }
+  // Send /clear to the CLI so it can clear its context
+  try {
+    await client.prompt('/clear');
+  } catch (err) {
+    console.error('Failed to send /clear:', err);
+  }
 }
 
 async function handleSessionCommand(arg: string): Promise<void> {
