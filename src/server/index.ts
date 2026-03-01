@@ -106,16 +106,64 @@ function handleShellCommand(
   });
 }
 
+// ─── Per-Directory Bridge Context ───────────────────────────────────────
+
+interface BridgeContext {
+  cwd: string;
+  bridge: Bridge | null;
+  cachedInitializeResponse: string | null;
+  initializePromise: Promise<string> | null;
+  activeSessionId: string | null;
+  sessionBuffers: Map<string, { result: string; history: string[] }>;
+  recentSessions: Map<string, SessionInfo>;
+  pendingServerRpcs: Map<number | string, {
+    resolve: (result: unknown) => void;
+    reject: (err: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>;
+  resolveEagerInit: ((cached: string) => void) | null;
+  rejectEagerInit: ((err: Error) => void) | null;
+}
+
+function createBridgeContext(cwd: string): BridgeContext {
+  return {
+    cwd,
+    bridge: null,
+    cachedInitializeResponse: null,
+    initializePromise: null,
+    activeSessionId: null,
+    sessionBuffers: new Map(),
+    recentSessions: new Map(),
+    pendingServerRpcs: new Map(),
+    resolveEagerInit: null,
+    rejectEagerInit: null,
+  };
+}
+
 export function startServer(options: ServerOptions): ServerResult {
   const app = express();
   const port = options.port || 3000;
   const sessionToken = randomBytes(32).toString('hex');
 
   const resolvedCwd = options.cwd || process.cwd();
+  const configuredDirs = options.dirs && options.dirs.length > 0 ? options.dirs : [];
+  const multiDir = configuredDirs.length > 0;
+  const allowedDirs = new Set(configuredDirs);
+
+  /** Validate that a cwd is allowed. In single-dir mode, only resolvedCwd. */
+  function isAllowedCwd(cwd: string): boolean {
+    if (!multiDir) return cwd === resolvedCwd;
+    return allowedDirs.has(cwd);
+  }
 
   // Token endpoint (must be before SPA fallback)
   app.get('/api/token', (_req, res) => {
     res.json({ token: sessionToken, cwd: resolvedCwd });
+  });
+
+  // Config endpoint — tells the client about multi-dir mode
+  app.get('/api/config', (_req, res) => {
+    res.json({ dirs: configuredDirs, multiDir, cwd: resolvedCwd });
   });
 
   // Sessions endpoint — forwards session/list to the CLI bridge and merges
@@ -127,11 +175,13 @@ export function startServer(options: ServerOptions): ServerResult {
       return;
     }
 
+    const ctx = bridgeContexts.get(cwd);
+
     // Collect sessions from CLI via session/list RPC (if bridge is alive)
     let cliSessions: SessionInfo[] = [];
-    if (activeBridge?.isAlive()) {
+    if (ctx?.bridge?.isAlive()) {
       try {
-        cliSessions = await listSessionsViaBridge(activeBridge, cwd);
+        cliSessions = await listSessionsViaBridge(ctx, cwd);
       } catch (err) {
         log.session('session/list RPC failed: %O', err);
       }
@@ -139,8 +189,9 @@ export function startServer(options: ServerOptions): ServerResult {
 
     // Merge with in-memory supplement (sessions created this bridge lifetime)
     const cliIds = new Set(cliSessions.map(s => s.id));
-    const supplement = [...recentSessions.values()]
-      .filter(s => s.cwd === cwd && !cliIds.has(s.id));
+    const supplement = ctx
+      ? [...ctx.recentSessions.values()].filter(s => s.cwd === cwd && !cliIds.has(s.id))
+      : [];
 
     const merged = [...cliSessions, ...supplement]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -170,27 +221,15 @@ export function startServer(options: ServerOptions): ServerResult {
   const server = createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  // Track the active bridge, socket, and cached protocol state
-  let activeBridge: Bridge | null = null;
   let activeSocket: WebSocket | null = null;
-  let cachedInitializeResponse: string | null = null;
-  let initializePromise: Promise<string> | null = null;
 
-  // Session replay buffer — remembers session history so we can replay it
-  // when a client reconnects and session/load returns "already loaded".
-  // Keyed by session ID; survives session switches within the same bridge.
-  let activeSessionId: string | null = null;
-  const sessionBuffers = new Map<string, { result: string; history: string[] }>();
-
-  // In-memory supplement for session listing. Tracks sessions created during
-  // this bridge's lifetime because the CLI's session/list doesn't index them
-  // until the next CLI process restart.
-  const recentSessions = new Map<string, SessionInfo>();
-
-  /** Internal request ID counter for server-originated RPC calls to the bridge. */
+  /** Internal request ID counter for server-originated RPC calls. */
   let serverRpcId = 100_000;
 
-  // Resolve bridge command and args once (same for all connections)
+  // Bridge contexts: one per directory. Keyed by resolved absolute path.
+  const bridgeContexts = new Map<string, BridgeContext>();
+
+  // Resolve bridge command and args once (same for all directories)
   let bridgeCommand: string;
   let bridgeArgs: string[];
   const envCommand = !options.copilotCommand ? process.env.COPILOT_COMMAND : undefined;
@@ -207,48 +246,60 @@ export function startServer(options: ServerOptions): ServerResult {
   if (skillsDirs) {
     bridgeEnvObj.COPILOT_SKILLS_DIRS = skillsDirs;
   }
-  const bridgeOptions: BridgeOptions = {
-    command: bridgeCommand,
-    args: bridgeArgs,
-    cwd: resolvedCwd,
-    env: Object.keys(bridgeEnvObj).length > 0 ? bridgeEnvObj : undefined,
-  };
 
-  function ensureBridge(): Bridge {
-    if (activeBridge?.isAlive()) {
-      log.bridge('reusing existing bridge');
-      return activeBridge;
+  function makeBridgeOptions(cwd: string): BridgeOptions {
+    return {
+      command: bridgeCommand,
+      args: bridgeArgs,
+      cwd,
+      env: Object.keys(bridgeEnvObj).length > 0 ? bridgeEnvObj : undefined,
+    };
+  }
+
+  function getOrCreateContext(cwd: string): BridgeContext {
+    let ctx = bridgeContexts.get(cwd);
+    if (!ctx) {
+      ctx = createBridgeContext(cwd);
+      bridgeContexts.set(cwd, ctx);
+    }
+    return ctx;
+  }
+
+  function ensureBridge(ctx: BridgeContext): Bridge {
+    if (ctx.bridge?.isAlive()) {
+      log.bridge('reusing existing bridge for %s', ctx.cwd);
+      return ctx.bridge;
     }
 
     // Clean up dead bridge state
-    cachedInitializeResponse = null;
-    initializePromise = null;
+    ctx.cachedInitializeResponse = null;
+    ctx.initializePromise = null;
 
-    log.bridge('spawning: %s %o', bridgeOptions.command, bridgeOptions.args);
+    const opts = makeBridgeOptions(ctx.cwd);
+    log.bridge('spawning: %s %o (cwd: %s)', opts.command, opts.args, ctx.cwd);
     const spawnStart = Date.now();
-    const bridge = new Bridge(bridgeOptions);
-    activeBridge = bridge;
+    const bridge = new Bridge(opts);
+    ctx.bridge = bridge;
 
     bridge.spawn();
     log.timing('bridge spawn: %dms', Date.now() - spawnStart);
 
     // When bridge dies on its own, clean up
     bridge.onClose((code) => {
-      log.bridge('closed with code %d', code);
+      log.bridge('closed with code %d (cwd: %s)', code, ctx.cwd);
       if (activeSocket?.readyState === WebSocket.OPEN) {
         activeSocket.close(1000, 'Bridge closed');
       }
-      if (activeBridge === bridge) {
-        activeBridge = null;
-        cachedInitializeResponse = null;
-        initializePromise = null;
-        rejectEagerInit?.(new Error('Bridge closed during eager initialize'));
-        resolveEagerInit = null;
-        rejectEagerInit = null;
-        // Clear session buffers — sessions are gone with the bridge
-        activeSessionId = null;
-        sessionBuffers.clear();
-        recentSessions.clear();
+      if (ctx.bridge === bridge) {
+        ctx.bridge = null;
+        ctx.cachedInitializeResponse = null;
+        ctx.initializePromise = null;
+        ctx.rejectEagerInit?.(new Error('Bridge closed during eager initialize'));
+        ctx.resolveEagerInit = null;
+        ctx.rejectEagerInit = null;
+        ctx.activeSessionId = null;
+        ctx.sessionBuffers.clear();
+        ctx.recentSessions.clear();
       }
     });
 
@@ -262,41 +313,32 @@ export function startServer(options: ServerOptions): ServerResult {
     return bridge;
   }
 
-  // Pending server-originated RPC callbacks — responses are intercepted in
-  // the bridge→client message handler (just like pendingSessionNewIds).
-  const pendingServerRpcs = new Map<number | string, {
-    resolve: (result: unknown) => void;
-    reject: (err: Error) => void;
-    timeout: ReturnType<typeof setTimeout>;
-  }>();
-
   /**
    * Send a JSON-RPC request from the server to the bridge and await the result.
-   * The response is intercepted in the bridge→client onMessage handler.
    */
-  function sendBridgeRpc<T>(method: string, params: unknown): Promise<T> {
+  function sendBridgeRpc<T>(ctx: BridgeContext, method: string, params: unknown): Promise<T> {
     const id = ++serverRpcId;
     return new Promise<T>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        pendingServerRpcs.delete(id);
+        ctx.pendingServerRpcs.delete(id);
         reject(new Error(`Bridge RPC timeout: ${method}`));
       }, 10_000);
 
-      pendingServerRpcs.set(id, {
+      ctx.pendingServerRpcs.set(id, {
         resolve: resolve as (result: unknown) => void,
         reject,
         timeout,
       });
 
-      activeBridge?.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      ctx.bridge?.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
     });
   }
 
   /**
    * Send session/list RPC to the bridge and collect all pages.
    */
-  async function listSessionsViaBridge(bridge: Bridge, cwd: string): Promise<SessionInfo[]> {
-    if (!bridge.isAlive()) return [];
+  async function listSessionsViaBridge(ctx: BridgeContext, cwd: string): Promise<SessionInfo[]> {
+    if (!ctx.bridge?.isAlive()) return [];
 
     const all: SessionInfo[] = [];
     let cursor: string | undefined;
@@ -309,7 +351,7 @@ export function startServer(options: ServerOptions): ServerResult {
       const result = await sendBridgeRpc<{
         sessions: Array<{ sessionId: string; cwd: string; title?: string; updatedAt: string }>;
         nextCursor?: string;
-      }>('session/list', params);
+      }>(ctx, 'session/list', params);
 
       for (const s of result.sessions ?? []) {
         all.push({ id: s.sessionId, cwd: s.cwd, title: s.title ?? null, updatedAt: s.updatedAt });
@@ -323,25 +365,19 @@ export function startServer(options: ServerOptions): ServerResult {
   }
 
   // Eagerly start bridge and send initialize before any client connects.
-  // The ~24s cold start happens while the user opens the URL / scans QR.
   const EAGER_INIT_ID = '__eager_init__';
-  let resolveEagerInit: ((cached: string) => void) | null = null;
-  let rejectEagerInit: ((err: Error) => void) | null = null;
 
-  function eagerInitialize(): void {
-    const bridge = ensureBridge();
+  function eagerInitialize(ctx: BridgeContext): void {
+    const bridge = ensureBridge(ctx);
 
-    initializePromise = new Promise<string>((resolve, reject) => {
-      resolveEagerInit = resolve;
-      rejectEagerInit = reject;
+    ctx.initializePromise = new Promise<string>((resolve, reject) => {
+      ctx.resolveEagerInit = resolve;
+      ctx.rejectEagerInit = reject;
     });
-    // Prevent unhandled rejection if bridge dies before anyone awaits
-    initializePromise.catch(() => {});
+    ctx.initializePromise.catch(() => {});
 
-    // The response will be caught by whatever onMessage handler is active.
-    // It checks for EAGER_INIT_ID and calls resolveEagerInit.
     bridge.onMessage((line) => {
-      handleEagerInitResponse(line);
+      handleEagerInitResponse(ctx, line);
     });
 
     bridge.send(JSON.stringify({
@@ -355,24 +391,24 @@ export function startServer(options: ServerOptions): ServerResult {
       },
     }));
 
-    log.session('eager initialize sent');
+    log.session('eager initialize sent for %s', ctx.cwd);
   }
 
-  function handleEagerInitResponse(line: string): boolean {
-    if (!resolveEagerInit) return false;
+  function handleEagerInitResponse(ctx: BridgeContext, line: string): boolean {
+    if (!ctx.resolveEagerInit) return false;
     try {
       const msg = JSON.parse(line);
       if (msg.id === EAGER_INIT_ID && msg.result) {
-        cachedInitializeResponse = JSON.stringify(msg.result);
-        log.timing('eager initialize complete');
-        resolveEagerInit(cachedInitializeResponse);
-        resolveEagerInit = null;
-        rejectEagerInit = null;
+        ctx.cachedInitializeResponse = JSON.stringify(msg.result);
+        log.timing('eager initialize complete for %s', ctx.cwd);
+        ctx.resolveEagerInit(ctx.cachedInitializeResponse);
+        ctx.resolveEagerInit = null;
+        ctx.rejectEagerInit = null;
         return true;
       } else if (msg.id === EAGER_INIT_ID && msg.error) {
-        rejectEagerInit!(new Error(msg.error.message ?? 'Eager initialize failed'));
-        resolveEagerInit = null;
-        rejectEagerInit = null;
+        ctx.rejectEagerInit!(new Error(msg.error.message ?? 'Eager initialize failed'));
+        ctx.resolveEagerInit = null;
+        ctx.rejectEagerInit = null;
         return true;
       }
     } catch {
@@ -381,7 +417,9 @@ export function startServer(options: ServerOptions): ServerResult {
     return false;
   }
 
-  eagerInitialize();
+  // Eager-init the primary cwd
+  const primaryCtx = getOrCreateContext(resolvedCwd);
+  eagerInitialize(primaryCtx);
 
   wss.on('connection', (ws, request) => {
     // Validate session token
@@ -392,22 +430,37 @@ export function startServer(options: ServerOptions): ServerResult {
       return;
     }
 
+    // Determine the cwd for this connection
+    const requestedCwd = url.searchParams.get('cwd') || resolvedCwd;
+    if (!isAllowedCwd(requestedCwd)) {
+      ws.close(4003, 'Directory not allowed');
+      return;
+    }
+
     // Enforce single connection (close old socket, but DON'T kill bridge)
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       log.server('new connection replacing existing one');
       activeSocket.close();
     }
 
-    log.server('client connected');
+    log.server('client connected (cwd: %s)', requestedCwd);
     activeSocket = ws;
+
+    // Get or create the bridge context for this directory
+    const ctx = getOrCreateContext(requestedCwd);
 
     let bridge: Bridge;
     try {
-      bridge = ensureBridge();
+      bridge = ensureBridge(ctx);
     } catch (err) {
       log.server('failed to spawn bridge: %O', err);
       ws.close(1011, 'Failed to spawn bridge');
       return;
+    }
+
+    // If this context hasn't been initialized yet, do it now
+    if (!ctx.initializePromise) {
+      eagerInitialize(ctx);
     }
 
     // Track pending session/new request IDs for session recording
@@ -419,27 +472,27 @@ export function startServer(options: ServerOptions): ServerResult {
     bridge.onMessage((line) => {
       // Check if this is the eager init response (arrives here if client
       // connected before bridge responded to the eager initialize)
-      if (handleEagerInitResponse(line)) return;
+      if (handleEagerInitResponse(ctx, line)) return;
 
       // Buffer session/update notifications for replay on reconnect
-      if (activeSessionId && line.includes('"session/update"')) {
+      if (ctx.activeSessionId && line.includes('"session/update"')) {
         try {
           const msg = JSON.parse(line);
           if (msg.method === 'session/update') {
             const sid = msg.params?.sessionId;
-            const buf = sid ? sessionBuffers.get(sid) : undefined;
+            const buf = sid ? ctx.sessionBuffers.get(sid) : undefined;
             if (buf) buf.history.push(line);
           }
         } catch { /* ignore */ }
       }
 
       // Intercept responses to server-originated RPCs (e.g. session/list)
-      if (pendingServerRpcs.size > 0) {
+      if (ctx.pendingServerRpcs.size > 0) {
         try {
           const msg = JSON.parse(line);
-          if (msg.id != null && pendingServerRpcs.has(msg.id)) {
-            const rpc = pendingServerRpcs.get(msg.id)!;
-            pendingServerRpcs.delete(msg.id);
+          if (msg.id != null && ctx.pendingServerRpcs.has(msg.id)) {
+            const rpc = ctx.pendingServerRpcs.get(msg.id)!;
+            ctx.pendingServerRpcs.delete(msg.id);
             clearTimeout(rpc.timeout);
             if (msg.error) rpc.reject(new Error(msg.error.message ?? 'RPC error'));
             else rpc.resolve(msg.result);
@@ -457,12 +510,11 @@ export function startServer(options: ServerOptions): ServerResult {
           if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
             pendingSessionNewIds.delete(msg.id);
             const newSid = msg.result.sessionId;
-            activeSessionId = newSid;
-            sessionBuffers.set(newSid, { result: JSON.stringify(msg.result), history: [] });
-            // Track in-memory for session listing (CLI won't index until restart)
-            recentSessions.set(newSid, {
+            ctx.activeSessionId = newSid;
+            ctx.sessionBuffers.set(newSid, { result: JSON.stringify(msg.result), history: [] });
+            ctx.recentSessions.set(newSid, {
               id: newSid,
-              cwd: resolvedCwd,
+              cwd: requestedCwd,
               title: null,
               updatedAt: new Date().toISOString(),
             });
@@ -478,10 +530,8 @@ export function startServer(options: ServerOptions): ServerResult {
           const msg = JSON.parse(line);
           if (msg.id != null && pendingSessionLoadIds.has(msg.id) && msg.result) {
             pendingSessionLoadIds.delete(msg.id);
-            // session/load succeeded — the bridge replayed history as notifications
-            // (which we already buffered above). Save the result for future replays.
-            if (activeSessionId) {
-              const buf = sessionBuffers.get(activeSessionId);
+            if (ctx.activeSessionId) {
+              const buf = ctx.sessionBuffers.get(ctx.activeSessionId);
               if (buf) buf.result = JSON.stringify(msg.result);
             }
           }
@@ -502,19 +552,17 @@ export function startServer(options: ServerOptions): ServerResult {
       }
 
       if (parsed?.method === 'uplink/shell') {
-        handleShellCommand(ws, parsed.id, parsed.params?.command, resolvedCwd);
+        handleShellCommand(ws, parsed.id, parsed.params?.command, requestedCwd);
         return;
       }
 
       if (parsed?.method === 'uplink/rename_session') {
         const { sessionId, summary } = parsed.params ?? {};
         if (parsed.id !== undefined && sessionId && summary) {
-          // Write summary to CLI's workspace.yaml so it persists across restarts
           const wsYamlPath = path.join(homedir(), '.copilot', 'session-state', sessionId, 'workspace.yaml');
           try {
             if (existsSync(wsYamlPath)) {
               let yaml = readFileSync(wsYamlPath, 'utf8');
-              // Replace existing summary line or append one
               if (/^summary:\s/m.test(yaml)) {
                 yaml = yaml.replace(/^summary:\s.*$/m, `summary: ${summary}`);
               } else {
@@ -525,8 +573,7 @@ export function startServer(options: ServerOptions): ServerResult {
           } catch (err) {
             log.session('failed to write workspace.yaml for rename: %O', err);
           }
-          // Also update in-memory supplement
-          const info = recentSessions.get(sessionId);
+          const info = ctx.recentSessions.get(sessionId);
           if (info) info.title = summary;
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }));
         } else if (parsed.id !== undefined) {
@@ -538,12 +585,12 @@ export function startServer(options: ServerOptions): ServerResult {
       // Intercept initialize — await eager init result (already done or in-flight)
       if (parsed?.method === 'initialize' && parsed.id != null) {
         const clientId = parsed.id;
-        if (cachedInitializeResponse) {
+        if (ctx.cachedInitializeResponse) {
           log.timing('initialize: cached (0ms)');
-          ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cachedInitializeResponse) }));
-        } else if (initializePromise) {
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(ctx.cachedInitializeResponse) }));
+        } else if (ctx.initializePromise) {
           log.timing('initialize: awaiting eager init...');
-          initializePromise.then((cached) => {
+          ctx.initializePromise.then((cached) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, result: JSON.parse(cached) }));
             }
@@ -553,7 +600,6 @@ export function startServer(options: ServerOptions): ServerResult {
             }
           });
         } else {
-          // No bridge, no promise — shouldn't happen but handle gracefully
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: clientId, error: { code: -32603, message: 'Bridge not available' } }));
         }
         return;
@@ -568,28 +614,26 @@ export function startServer(options: ServerOptions): ServerResult {
       if (parsed?.method === 'session/load' && parsed.id != null) {
         const requestedId = parsed.params?.sessionId;
         if (requestedId) {
-          const buf = sessionBuffers.get(requestedId);
+          const buf = ctx.sessionBuffers.get(requestedId);
           if (buf) {
-            // We have a buffer for this session — replay it instead of asking the CLI
             log.session('replaying %d buffered updates for session %s', buf.history.length, requestedId);
-            activeSessionId = requestedId;
+            ctx.activeSessionId = requestedId;
             ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(buf.result) }));
             for (const line of buf.history) {
               ws.send(line);
             }
             return; // Don't forward to bridge
           }
-          // No buffer — forward to CLI and start tracking
-          activeSessionId = requestedId;
+          ctx.activeSessionId = requestedId;
           pendingSessionLoadIds.add(parsed.id);
         }
       }
 
       // Buffer outgoing prompts as user_message_chunk so replay includes user messages
-      if (parsed?.method === 'session/prompt' && activeSessionId) {
+      if (parsed?.method === 'session/prompt' && ctx.activeSessionId) {
         const promptParams = parsed.params as { sessionId?: string; prompt?: Array<{ type: string; text?: string }> } | undefined;
         const sid = promptParams?.sessionId;
-        const buf = sid ? sessionBuffers.get(sid) : undefined;
+        const buf = sid ? ctx.sessionBuffers.get(sid) : undefined;
         if (buf && promptParams?.prompt) {
           for (const part of promptParams.prompt) {
             if (part.type === 'text' && part.text) {
@@ -606,7 +650,7 @@ export function startServer(options: ServerOptions): ServerResult {
         }
       }
 
-      if (activeBridge === bridge) {
+      if (ctx.bridge === bridge) {
         bridge.send(raw);
       }
     });
@@ -625,9 +669,11 @@ export function startServer(options: ServerOptions): ServerResult {
   });
 
   const close = () => {
-    if (activeBridge) {
-      activeBridge.kill();
-      activeBridge = null;
+    for (const ctx of bridgeContexts.values()) {
+      if (ctx.bridge) {
+        ctx.bridge.kill();
+        ctx.bridge = null;
+      }
     }
 
     for (const client of wss.clients) {
@@ -642,7 +688,7 @@ export function startServer(options: ServerOptions): ServerResult {
     activeSocket = null;
   };
 
-  const exposedInit = initializePromise!.then(() => {});
+  const exposedInit = primaryCtx.initializePromise!.then(() => {});
   exposedInit.catch(() => {}); // prevent unhandled rejection if caller doesn't await
   return { server, sessionToken, close, initializePromise: exposedInit };
 }
