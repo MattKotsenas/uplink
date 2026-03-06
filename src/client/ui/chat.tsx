@@ -6,6 +6,7 @@ import { ToolCallCard } from './tool-call.js';
 import { PermissionCard, activeRequests } from './permission.js';
 import { PlanCard } from './plan.js';
 import { ShellOutput } from './shell.js';
+import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import typescript from 'highlight.js/lib/languages/typescript';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -43,53 +44,48 @@ hljs.registerLanguage('cs', csharp);
 hljs.registerLanguage('powershell', powershell);
 hljs.registerLanguage('ps1', powershell);
 
-// ─── Markdown renderer (pure function) ────────────────────────────────
+// ─── Markdown renderer (marked + highlight.js) ───────────────────────
+
+const marked = new Marked({
+  gfm: true,
+  breaks: false,
+  renderer: {
+    // Escape raw HTML in markdown source (security)
+    html({ text }) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    },
+    // Open links in new tabs and reject non-http schemes
+    link({ href, text }) {
+      const trimmed = (href ?? '').trim();
+      if (/^(https?:|mailto:|\/|#)/i.test(trimmed)) {
+        return `<a href="${trimmed}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      }
+      return `${text} (${trimmed})`;
+    },
+    // Syntax highlighting for fenced code blocks
+    code({ text, lang }) {
+      let highlighted: string;
+      if (lang && hljs.getLanguage(lang)) {
+        highlighted = hljs.highlight(text, { language: lang }).value;
+      } else if (lang) {
+        highlighted = hljs.highlightAuto(text).value;
+      } else {
+        highlighted = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+      const langClass = lang ? ` class="language-${lang}"` : '';
+      return `<pre><code${langClass}>${highlighted}</code></pre>`;
+    },
+  },
+});
 
 export function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-  // Code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang: string, code: string) => {
-    const unescaped = code
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"');
-    let highlighted: string;
-    if (lang && hljs.getLanguage(lang)) {
-      highlighted = hljs.highlight(unescaped, { language: lang }).value;
-    } else if (lang) {
-      highlighted = hljs.highlightAuto(unescaped).value;
-    } else {
-      highlighted = code;
-    }
-    const langClass = lang ? ` class="language-${lang}"` : '';
-    return `<pre><code${langClass}>${highlighted}</code></pre>`;
-  });
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // Italic
-  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
-    const trimmedUrl = (url as string).trim();
-    if (/^(https?:|mailto:|\/|#)/i.test(trimmedUrl)) {
-      return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-    }
-    return `${text} (${trimmedUrl})`;
-  });
-
-  return html;
+  return marked.parse(text) as string;
 }
 
 // ─── Components ───────────────────────────────────────────────────────
