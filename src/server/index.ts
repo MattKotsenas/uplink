@@ -66,6 +66,48 @@ function discoverPluginSkillsDirs(): string | undefined {
   return dirs.length > 0 ? dirs.join(',') : undefined;
 }
 
+/**
+ * Split a command string into argv tokens, keeping quoted segments together.
+ * This intentionally supports simple quoting only (single/double quotes).
+ */
+function splitCommandString(input: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+
+  for (const ch of input) {
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        parts.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (current) {
+    parts.push(current);
+  }
+
+  return parts;
+}
+
 const SHELL_TIMEOUT_MS = 30_000;
 
 function handleShellCommand(
@@ -277,6 +319,30 @@ export function startServer(options: ServerOptions): ServerResult {
 
     res.json({ sessions: merged });
   });
+
+  // Close a session: kill the bridge and clean up for a given cwd
+  app.post('/api/session/close', express.json(), (req, res) => {
+    const cwd = req.body?.cwd as string | undefined;
+    if (!cwd) {
+      res.status(400).json({ error: 'cwd is required' });
+      return;
+    }
+    const ctx = bridgeContexts.get(cwd);
+    if (ctx) {
+      if (ctx.bridge) {
+        ctx.bridge.kill();
+        ctx.bridge = null;
+      }
+      bridgeContexts.delete(cwd);
+    }
+    const sock = activeSockets.get(cwd);
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.close(1000, 'Session closed');
+    }
+    activeSockets.delete(cwd);
+    log.session('session closed for %s', cwd);
+    res.json({ ok: true });
+  });
   
   // Serve static files if configured
   if (options.staticDir) {
@@ -324,8 +390,8 @@ export function startServer(options: ServerOptions): ServerResult {
 
   const envCommand = !options.copilotCommand ? process.env.COPILOT_COMMAND : undefined;
   if (envCommand) {
-    const parts = envCommand.split(' ');
-    bridgeCommand = parts[0];
+    const parts = splitCommandString(envCommand);
+    bridgeCommand = parts[0] ?? 'copilot';
     bridgeArgs = parts.slice(1);
   } else {
     bridgeCommand = options.copilotCommand ?? 'copilot';
@@ -348,9 +414,14 @@ export function startServer(options: ServerOptions): ServerResult {
     };
   }
 
+  const MAX_BRIDGE_CONTEXTS = 5;
+
   function getOrCreateContext(cwd: string): BridgeContext {
     let ctx = bridgeContexts.get(cwd);
     if (!ctx) {
+      if (bridgeContexts.size >= MAX_BRIDGE_CONTEXTS) {
+        throw new Error(`Session limit reached (max ${MAX_BRIDGE_CONTEXTS}). Close an existing session first.`);
+      }
       ctx = createBridgeContext(cwd);
       bridgeContexts.set(cwd, ctx);
     }
@@ -546,7 +617,15 @@ export function startServer(options: ServerOptions): ServerResult {
     activeSockets.set(requestedCwd, ws);
 
     // Get or create the bridge context for this directory
-    const ctx = getOrCreateContext(requestedCwd);
+    let ctx: BridgeContext;
+    try {
+      ctx = getOrCreateContext(requestedCwd);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Session limit reached';
+      log.server('session limit: %s', msg);
+      ws.close(4008, msg);
+      return;
+    }
 
     let bridge: Bridge;
     try {

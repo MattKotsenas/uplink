@@ -62,6 +62,7 @@ let sessionCwds: string[] = [];
 let activeDirCwd: string | null = null;
 let sessionToken: string = '';
 let sessionSwitchInFlight = false;
+const MAX_SESSIONS = 5;
 const sessionCwdsStorageKey = `uplink-session-cwds:${location.host}`;
 const activeCwdStorageKey = `uplink-active-cwd:${location.host}`;
 
@@ -119,13 +120,66 @@ function shortDirName(dir: string): string {
   return parts.slice(-2).join('/') || dir;
 }
 
+/** Extract current folder name from path (last segment). */
+function currentFolderName(dir: string): string {
+  const normalized = dir.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!normalized) return dir;
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? dir;
+}
+
+let dirTooltipTimer: number | null = null;
+
+function hideDirLabelTooltip(): void {
+  delete dirLabel.dataset.tooltipOpen;
+  if (dirTooltipTimer != null) {
+    window.clearTimeout(dirTooltipTimer);
+    dirTooltipTimer = null;
+  }
+}
+
+function showDirLabelTooltip(): void {
+  if (!dirLabel.dataset.fullPath) return;
+  dirLabel.dataset.tooltipOpen = 'true';
+  if (dirTooltipTimer != null) window.clearTimeout(dirTooltipTimer);
+  dirTooltipTimer = window.setTimeout(() => {
+    hideDirLabelTooltip();
+  }, 2200);
+}
+
+dirLabel.setAttribute('role', 'button');
+dirLabel.setAttribute('tabindex', '0');
+dirLabel.addEventListener('click', (e) => {
+  e.stopPropagation();
+  showDirLabelTooltip();
+});
+dirLabel.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    showDirLabelTooltip();
+  }
+});
+document.addEventListener('click', (e) => {
+  if (!dirLabel.contains(e.target as Node)) {
+    hideDirLabelTooltip();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideDirLabelTooltip();
+});
+
 function updateDirLabel(dir: string | null): void {
   if (!dir) {
+    hideDirLabelTooltip();
+    delete dirLabel.dataset.fullPath;
+    dirLabel.removeAttribute('title');
     dirLabel.hidden = true;
     return;
   }
-  dirLabel.textContent = shortDirName(dir);
+  dirLabel.textContent = currentFolderName(dir);
   dirLabel.title = dir;
+  dirLabel.dataset.fullPath = dir;
+  dirLabel.setAttribute('aria-label', `Current folder: ${dir}`);
   dirLabel.hidden = false;
 }
 
@@ -179,6 +233,10 @@ async function switchSessionByOffset(offset: number): Promise<void> {
 function getOrCreateDirContext(dir: string): DirContext {
   let ctx = dirContexts.get(dir);
   if (ctx) return ctx;
+
+  if (dirContexts.size >= MAX_SESSIONS) {
+    throw new Error(`Session limit reached (max ${MAX_SESSIONS}). Close an existing session first.`);
+  }
 
   const conv = new Conversation();
   const wsUrl = `${wsProtocol}//${location.host}/ws?token=${encodeURIComponent(sessionToken)}&cwd=${encodeURIComponent(dir)}`;
@@ -646,6 +704,10 @@ async function handleClientCommand(command: string, arg: string): Promise<string
         activeConversation.addSystemMessage(`Navigate failed: ${msg}`);
       }
       return undefined;
+    case '/exit':
+    case '/quit':
+      await closeCurrentSession();
+      return undefined;
     case '/agent':
       applyMode('chat');
       activeConversation.addSystemMessage('Switched to agent mode');
@@ -684,6 +746,50 @@ async function navigateToPath(targetPath: string): Promise<void> {
   clearConversation();
   await client.newSession();
   activeConversation.addSystemMessage(`Navigated to ${cwd}`);
+}
+
+/** Close the current session: send exit via ACP, disconnect, tear down bridge, switch away. */
+async function closeCurrentSession(): Promise<void> {
+  const cwdToClose = activeDirCwd;
+  if (!cwdToClose || !client) {
+    activeConversation.addSystemMessage('No active session to close.');
+    return;
+  }
+
+  // Don't allow closing the last session
+  if (sessionCwds.length <= 1) {
+    activeConversation.addSystemMessage('Cannot close the only session.');
+    return;
+  }
+
+  // Send exit notification via ACP (best-effort)
+  try {
+    client.sendRawRequest('exit', {}).catch(() => {});
+  } catch { /* ignore */ }
+
+  // Disconnect the client WebSocket
+  client.disconnect();
+  dirContexts.delete(cwdToClose);
+  sessionDotStatuses.delete(cwdToClose);
+
+  // Remove from session list
+  sessionCwds = sessionCwds.filter((c) => c !== cwdToClose);
+  persistSessionCwds();
+
+  // Tell server to kill bridge and clean up
+  try {
+    await fetch('/api/session/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd: cwdToClose }),
+    });
+  } catch { /* ignore */ }
+
+  // Switch to the nearest remaining session
+  const nextCwd = sessionCwds[0];
+  await connectToDirectory(nextCwd);
+  renderSessionDots();
+  activeConversation.addSystemMessage(`Session closed: ${cwdToClose}`);
 }
 
 async function handleSessionCommand(arg: string): Promise<void> {

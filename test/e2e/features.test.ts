@@ -183,6 +183,35 @@ test('/navigate invalid path shows friendly error', async ({ page }) => {
   await expect(page.locator('.message.system').filter({ hasText: 'Navigate failed:' })).toBeVisible({ timeout: 10000 });
 });
 
+test('directory tag shows folder name, fixed size, and full-path tooltip', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const dirLabel = page.locator('#dir-label');
+  const input = page.locator('#prompt-input');
+  const currentFolder = process.cwd().split(/[\\/]/).filter(Boolean).pop();
+
+  // We show only the current folder in the badge, not the full path.
+  await expect(dirLabel).toBeVisible();
+  await expect(dirLabel).toHaveText(currentFolder!);
+  await expect(dirLabel).toHaveAttribute('title', process.cwd());
+
+  const beforeWidth = await dirLabel.evaluate((el) => getComputedStyle(el).width);
+
+  // Clicking should expose the tooltip state with the full path.
+  await dirLabel.click();
+  await expect(dirLabel).toHaveAttribute('data-tooltip-open', 'true');
+
+  await input.fill('/navigate src/client');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.system').filter({ hasText: 'Navigated to' })).toBeVisible({ timeout: 10000 });
+
+  await expect(dirLabel).toHaveText('client');
+  await expect(dirLabel).toHaveAttribute('title', /src[\\/]client$/);
+  const afterWidth = await dirLabel.evaluate((el) => getComputedStyle(el).width);
+  expect(afterWidth).toBe(beforeWidth);
+});
+
 test('session dots persist across page reload', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
@@ -197,6 +226,76 @@ test('session dots persist across page reload', async ({ page }) => {
   await page.reload();
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
   await expect(page.locator('.session-dot')).toHaveCount(2);
+});
+
+test('session limit prevents more than 5 active sessions', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const sendBtn = page.locator('#send-btn');
+  const cwd = process.cwd();
+
+  // Navigate to 4 additional directories using absolute paths (1 already exists from boot).
+  const dirs = [`${cwd}/src`, `${cwd}/test`, `${cwd}/docs`, `${cwd}/bin`];
+  for (let i = 0; i < dirs.length; i++) {
+    await input.fill(`/navigate ${dirs[i]}`);
+    await sendBtn.click();
+    await expect(page.locator('.session-dot')).toHaveCount(i + 2, { timeout: 10000 });
+  }
+
+  // Should now have 5 dots (boot cwd + 4 navigated)
+  await expect(page.locator('.session-dot')).toHaveCount(5);
+
+  // The 6th navigate should show a limit error
+  await input.fill(`/navigate ${cwd}/scripts`);
+  await sendBtn.click();
+  await expect(
+    page.locator('.message.system').filter({ hasText: /Session limit|max 5/ }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Still only 5 dots
+  await expect(page.locator('.session-dot')).toHaveCount(5);
+});
+
+test('/exit closes current session and switches to another', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const sendBtn = page.locator('#send-btn');
+  const cwd = process.cwd();
+
+  // Navigate to a second directory
+  await input.fill(`/navigate ${cwd}/src`);
+  await sendBtn.click();
+  await expect(page.locator('.session-dot')).toHaveCount(2, { timeout: 10000 });
+
+  // Exit the current session (src)
+  await input.fill('/exit');
+  await sendBtn.click();
+  await expect(
+    page.locator('.message.system').filter({ hasText: 'Session closed' }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Back to 1 session — dots hidden, but dir label should show the remaining session
+  await expect(page.locator('#dir-label')).toBeVisible();
+  const currentFolder = cwd.split(/[\\/]/).filter(Boolean).pop();
+  await expect(page.locator('#dir-label')).toHaveText(currentFolder!);
+});
+
+test('/exit on the only session shows an error', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  await page.locator('#prompt-input').fill('/exit');
+  await page.locator('#send-btn').click();
+  await expect(
+    page.locator('.message.system').filter({ hasText: 'Cannot close the only session' }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Dots are hidden when there's only 1 session — verify session is still alive
+  await expect(page.locator('#dir-label')).toBeVisible();
 });
 
 test('/model shows available models in autocomplete', async ({ page }) => {

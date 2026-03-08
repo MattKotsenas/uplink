@@ -10,7 +10,9 @@ import {
 import WebSocket from 'ws';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { resolve as resolvePath } from 'node:path';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { resolve as resolvePath, join as joinPath } from 'node:path';
+import { tmpdir } from 'node:os';
 import { startServer } from '../../src/server/index.js';
 import type {
   JsonRpcMessage,
@@ -856,4 +858,210 @@ describe('Eager initialize', () => {
     },
     TEST_TIMEOUT,
   );
+});
+
+// ── COPILOT_COMMAND parsing tests ─────────────────────────────────────
+describe('COPILOT_COMMAND parsing', () => {
+  it(
+    'handles quoted command arguments with spaces (Windows-safe startup behavior)',
+    async () => {
+      // Edge case: command strings often include quoted paths with spaces
+      // (e.g., "Program Files" on Windows). We should parse those safely.
+      const scriptWithSpace = resolvePath('src/mock/mock agent.ts');
+      cpSync(resolvePath('src/mock/mock-agent.ts'), scriptWithSpace);
+
+      const previousCopilotCommand = process.env.COPILOT_COMMAND;
+      process.env.COPILOT_COMMAND = `"npx" tsx "${scriptWithSpace}" --acp --stdio`;
+
+      let localServer: Server | undefined;
+      let localResult: ReturnType<typeof startServer> | undefined;
+      let ws: WebSocket | undefined;
+
+      try {
+        localResult = startServer({ port: 0 });
+        localServer = localResult.server;
+        await new Promise<void>((resolve) => localServer!.listen(0, '127.0.0.1', () => resolve()));
+        const localPort = (localServer.address() as AddressInfo).port;
+
+        ws = new WebSocket(
+          `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(localResult.sessionToken)}`,
+        );
+        await new Promise<void>((resolve, reject) => {
+          ws!.on('open', () => resolve());
+          ws!.on('error', reject);
+        });
+
+        const result = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+          ws,
+          'initialize',
+          { protocolVersion: 1, clientCapabilities: {} },
+        );
+        expect(result.protocolVersion).toBe(1);
+        expect(result.agentInfo?.name).toBe('mock-agent');
+      } finally {
+        process.env.COPILOT_COMMAND = previousCopilotCommand;
+        if (ws && ws.readyState !== WebSocket.CLOSED) {
+          ws.close();
+          await new Promise<void>((resolve) => ws!.once('close', () => resolve()));
+        }
+        localResult?.close();
+        if (localServer) {
+          await new Promise<void>((resolve, reject) => {
+            localServer!.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+        rmSync(scriptWithSpace, { force: true });
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+// ── Session limit tests ───────────────────────────────────────────────
+describe('Session limit', () => {
+  it(
+    'rejects the 6th concurrent directory with close code 4008',
+    async () => {
+      // Server enforces max 5 bridge contexts. The primary cwd takes slot 1,
+      // so 4 more should succeed and the 6th should be rejected.
+      const tempDirs: string[] = [];
+      const openSockets: WebSocket[] = [];
+      let localServer: Server | undefined;
+      let localResult: ReturnType<typeof startServer> | undefined;
+
+      try {
+        for (let i = 0; i < 5; i++) {
+          tempDirs.push(mkdtempSync(joinPath(tmpdir(), `session-limit-${i}-`)));
+        }
+
+        localResult = startServer({
+          port: 0,
+          copilotCommand: COPILOT_COMMAND,
+          copilotArgs: COPILOT_ARGS,
+        });
+        localServer = localResult.server;
+        await new Promise<void>((resolve) =>
+          localServer!.listen(0, '127.0.0.1', () => resolve()),
+        );
+        const localPort = (localServer.address() as AddressInfo).port;
+        const tok = localResult.sessionToken;
+
+        // Connect to 4 additional directories (primary cwd already takes slot 1)
+        for (let i = 0; i < 4; i++) {
+          const ws = new WebSocket(
+            `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(tok)}&cwd=${encodeURIComponent(tempDirs[i])}`,
+          );
+          await new Promise<void>((resolve, reject) => {
+            ws.on('open', () => resolve());
+            ws.on('error', reject);
+          });
+          openSockets.push(ws);
+        }
+
+        // The 6th directory should be rejected (5 bridge contexts already exist).
+        // WS 'open' fires before the server-side handler runs, so we just wait
+        // for the close event which carries the server's rejection code.
+        const rejectedWs = new WebSocket(
+          `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(tok)}&cwd=${encodeURIComponent(tempDirs[4])}`,
+        );
+        const closeEvent = await new Promise<{ code: number; reason: string }>((resolve) => {
+          rejectedWs.on('close', (code, reason) =>
+            resolve({ code, reason: reason.toString() }),
+          );
+        });
+
+        expect(closeEvent.code).toBe(4008);
+        expect(closeEvent.reason).toContain('Session limit');
+      } finally {
+        await Promise.all(
+          openSockets.map(
+            (ws) =>
+              new Promise<void>((r) => {
+                if (ws.readyState === WebSocket.CLOSED) return r();
+                ws.once('close', () => r());
+                ws.close();
+              }),
+          ),
+        );
+        localResult?.close();
+        if (localServer) {
+          await new Promise<void>((resolve, reject) => {
+            localServer!.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+        for (const d of tempDirs) rmSync(d, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+// ── Session close endpoint tests ──────────────────────────────────────
+describe('POST /api/session/close', () => {
+  it(
+    'closes a bridge and frees the session slot',
+    async () => {
+      const tempDir = mkdtempSync(joinPath(tmpdir(), 'session-close-'));
+      let localServer: Server | undefined;
+      let localResult: ReturnType<typeof startServer> | undefined;
+
+      try {
+        localResult = startServer({
+          port: 0,
+          copilotCommand: COPILOT_COMMAND,
+          copilotArgs: COPILOT_ARGS,
+        });
+        localServer = localResult.server;
+        await new Promise<void>((resolve) =>
+          localServer!.listen(0, '127.0.0.1', () => resolve()),
+        );
+        const localPort = (localServer.address() as AddressInfo).port;
+        const tok = localResult.sessionToken;
+
+        // Connect to an additional directory to create a bridge
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(tok)}&cwd=${encodeURIComponent(tempDir)}`,
+        );
+        await new Promise<void>((resolve, reject) => {
+          ws.on('open', () => resolve());
+          ws.on('error', reject);
+        });
+
+        // Close the session via the API
+        const res = await fetch(`http://127.0.0.1:${localPort}/api/session/close`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd: tempDir }),
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { ok: boolean };
+        expect(body.ok).toBe(true);
+
+        // WebSocket should be closed by the server
+        await new Promise<void>((resolve) => {
+          if (ws.readyState === WebSocket.CLOSED) return resolve();
+          ws.once('close', () => resolve());
+        });
+        expect(ws.readyState).toBe(WebSocket.CLOSED);
+      } finally {
+        localResult?.close();
+        if (localServer) {
+          await new Promise<void>((resolve, reject) => {
+            localServer!.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  it('returns 400 when cwd is missing', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/session/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
 });

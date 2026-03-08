@@ -189,4 +189,39 @@ describe('slash-commands', () => {
       expect(findModelName('unknown')).toBeUndefined();
     });
   });
+
+  describe('/exit and /quit', () => {
+    it('registers exit and quit as client commands', () => {
+      const exit = commands.find((c) => c.name === 'exit');
+      const quit = commands.find((c) => c.name === 'quit');
+      expect(exit).toBeDefined();
+      expect(exit!.kind).toBe('client');
+      expect(quit).toBeDefined();
+      expect(quit!.kind).toBe('client');
+    });
+
+    it('parses /exit as a complete client command', () => {
+      const parsed = parseSlashCommand('/exit');
+      expect(parsed).toBeDefined();
+      expect(parsed!.command).toBe('/exit');
+      expect(parsed!.kind).toBe('client');
+      expect(parsed!.complete).toBe(true);
+    });
+
+    it('parses /quit as a complete client command', () => {
+      const parsed = parseSlashCommand('/quit');
+      expect(parsed).toBeDefined();
+      expect(parsed!.command).toBe('/quit');
+      expect(parsed!.kind).toBe('client');
+      expect(parsed!.complete).toBe(true);
+    });
+
+    it('shows exit and quit in completions', () => {
+      const results = getCompletions('/ex');
+      expect(results.some((r) => r.label === '/exit')).toBe(true);
+
+      const results2 = getCompletions('/qu');
+      expect(results2.some((r) => r.label === '/quit')).toBe(true);
+    });
+  });
 });

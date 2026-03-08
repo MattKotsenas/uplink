@@ -38,6 +38,9 @@ html.dark {
   --accent: #cba6f7;
   --accent-hover: #b4befe;
   --accent-subtle: rgb(203 166 247 / 15%);
+  --accent-border: rgb(203 166 247 / 20%);
+  --accent-border-hover: rgb(203 166 247 / 40%);
+  --accent-glow: rgb(203 166 247 / 12%);
   --border: #45475a;
   --danger: #f38ba8;
   --success: #a6e3a1;
@@ -59,6 +62,9 @@ html.light {
   --accent: #8839ef;
   --accent-hover: #7287fd;
   --accent-subtle: rgb(136 57 239 / 10%);
+  --accent-border: rgb(136 57 239 / 20%);
+  --accent-border-hover: rgb(136 57 239 / 35%);
+  --accent-glow: rgb(136 57 239 / 10%);
   --border: #ccd0da;
   --danger: #d20f39;
   --success: #40a02b;
@@ -162,17 +168,71 @@ body, html {
 }
 
 .dir-label {
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  background-color: var(--bg-tertiary);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  max-width: 160px;
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
+  flex: 0 0 auto;
   min-width: 0;
+  position: relative;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.dir-label::before {
+  content: '/';
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.dir-label:hover {
+  color: var(--text-primary);
+}
+
+.dir-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.dir-label:not([data-full-path])::after {
+  content: none;
+}
+
+.dir-label::after {
+  content: attr(data-full-path);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  inline-size: min(80vw, 28rem);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 20;
+}
+
+.dir-label:is(:hover, :focus-visible, [data-tooltip-open='true'])::after {
+  opacity: 1;
 }
 
 #connection-status {
@@ -881,6 +941,10 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10
 
   #header h1 {
     font-size: var(--text-lg);
+  }
+
+  .dir-label {
+    max-inline-size: 8.5rem;
   }
 }
 

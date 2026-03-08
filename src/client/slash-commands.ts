@@ -88,6 +88,8 @@ export const commands: SlashCommand[] = [
       { label: 'List', value: 'list' },
     ],
   },
+  { name: 'exit', description: 'Close current session', kind: 'client' },
+  { name: 'quit', description: 'Close current session', kind: 'client' },
   {
     name: 'navigate',
     description: 'Create a new session in another path',
