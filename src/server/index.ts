@@ -343,6 +343,24 @@ export function startServer(options: ServerOptions): ServerResult {
     log.session('session closed for %s', cwd);
     res.json({ ok: true });
   });
+
+  // Close ALL sessions: kill every bridge context and reset state
+  app.post('/api/sessions/close-all', (_req, res) => {
+    for (const [cwd, ctx] of bridgeContexts) {
+      if (ctx.bridge) {
+        ctx.bridge.kill();
+        ctx.bridge = null;
+      }
+      const sock = activeSockets.get(cwd);
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.close(1000, 'All sessions closed');
+      }
+      activeSockets.delete(cwd);
+    }
+    bridgeContexts.clear();
+    log.session('all sessions closed');
+    res.json({ ok: true });
+  });
   
   // Serve static files if configured
   if (options.staticDir) {

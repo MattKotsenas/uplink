@@ -249,29 +249,37 @@ test('session dots persist across page reload', async ({ page }) => {
 });
 
 test('session limit prevents more than 5 active sessions', async ({ page }) => {
+  test.setTimeout(120_000); // each navigate spawns a bridge — generous timeout for CI
+
+  // Close stale bridge contexts from prior tests sharing this server
+  await page.request.post('http://localhost:3000/api/sessions/close-all');
+
   await page.goto('/');
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
 
   const input = page.locator('#prompt-input');
   const sendBtn = page.locator('#send-btn');
   const cwd = process.cwd();
 
-  // Navigate to 4 additional directories using absolute paths (1 already exists from boot).
-  // Wait for send button re-enable after each navigate (connection must finish).
+  // Navigate to 4 additional directories, waiting for each to fully initialize
+  // (the "Navigated to" system message) before starting the next one.
   const dirs = [`${cwd}/src`, `${cwd}/test`, `${cwd}/docs`, `${cwd}/bin`];
   for (let i = 0; i < dirs.length; i++) {
     await input.fill(`/navigate ${dirs[i]}`);
-    await sendBtn.click();
-    await expect(page.locator('.session-dot')).toHaveCount(i + 2, { timeout: 10000 });
-    await expect(sendBtn).toBeEnabled({ timeout: 10000 });
+    await sendBtn.click({ force: true });
+    // Wait for the navigation to fully complete (bridge spawn + init + new session)
+    await expect(
+      page.locator('.message.system').filter({ hasText: `Navigated to ${dirs[i]}` }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('.session-dot')).toHaveCount(i + 2);
   }
 
   // Should now have 5 dots (boot cwd + 4 navigated)
   await expect(page.locator('.session-dot')).toHaveCount(5);
 
-  // The 6th navigate should show a limit error
+  // The 6th navigate fails at the client level (before WS connect)
   await input.fill(`/navigate ${cwd}/scripts`);
-  await sendBtn.click();
+  await sendBtn.click({ force: true });
   await expect(
     page.locator('.message.system').filter({ hasText: /Session limit|max 5/ }),
   ).toBeVisible({ timeout: 5000 });
@@ -281,21 +289,27 @@ test('session limit prevents more than 5 active sessions', async ({ page }) => {
 });
 
 test('/exit closes current session and switches to another', async ({ page }) => {
+  // Close stale bridge contexts from prior tests
+  await page.request.post('http://localhost:3000/api/sessions/close-all');
+
   await page.goto('/');
-  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
 
   const input = page.locator('#prompt-input');
   const sendBtn = page.locator('#send-btn');
   const cwd = process.cwd();
 
-  // Navigate to a second directory
+  // Navigate to a second directory and wait for it to fully initialize
   await input.fill(`/navigate ${cwd}/src`);
-  await sendBtn.click();
-  await expect(page.locator('.session-dot')).toHaveCount(2, { timeout: 10000 });
+  await sendBtn.click({ force: true });
+  await expect(
+    page.locator('.message.system').filter({ hasText: `Navigated to ${cwd}/src` }),
+  ).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.session-dot')).toHaveCount(2);
 
   // Exit the current session (src)
   await input.fill('/exit');
-  await sendBtn.click();
+  await sendBtn.click({ force: true });
   await expect(
     page.locator('.message.system').filter({ hasText: 'Session closed' }),
   ).toBeVisible({ timeout: 5000 });
