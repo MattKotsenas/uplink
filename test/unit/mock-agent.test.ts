@@ -256,6 +256,23 @@ describe('Mock ACP Agent', () => {
     expect(response.error.message).toContain('already loaded');
   });
 
+  it('/clear scenario', async () => {
+    const promptId = id();
+    agent.send({
+      jsonrpc: '2.0', id: promptId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: '/clear' }] },
+    });
+
+    await agent.waitForResponse(promptId);
+    const chunks = agent.received
+      .filter(m => !m.id && m.method === 'session/update' && m.params.update.sessionUpdate === 'agent_message_chunk')
+      .map(m => m.params.update.content);
+
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].text).toBe('Conversation cleared.');
+    expect(agent.received.find(m => m.id === promptId).result.stopReason).toBe('end_turn');
+  });
+
   it('JSON-RPC envelope correctness', async () => {
     const promptId = id();
     agent.send({

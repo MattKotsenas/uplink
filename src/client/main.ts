@@ -720,6 +720,9 @@ async function handleClientCommand(command: string, arg: string): Promise<string
       applyMode('autopilot');
       activeConversation.addSystemMessage('Switched to autopilot mode');
       return arg || undefined;
+    case '/clear':
+      handleClearCommand();
+      return undefined;
   }
   return undefined;
 }
@@ -790,6 +793,21 @@ async function closeCurrentSession(): Promise<void> {
   await connectToDirectory(nextCwd);
   renderSessionDots();
   activeConversation.addSystemMessage(`Session closed: ${cwdToClose}`);
+}
+
+async function handleClearCommand(): Promise<void> {
+  if (!client) return;
+  clearConversation();
+  // Clear server-side replay buffer
+  if (client.currentSessionId) {
+    client.sendRawRequest('uplink/clear_history', { sessionId: client.currentSessionId }).catch(() => {});
+  }
+  // Send /clear to the CLI so it can clear its context
+  try {
+    await client.prompt('/clear');
+  } catch (err) {
+    console.error('Failed to send /clear:', err);
+  }
 }
 
 async function handleSessionCommand(arg: string): Promise<void> {

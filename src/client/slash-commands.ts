@@ -96,6 +96,7 @@ export const commands: SlashCommand[] = [
     kind: 'client',
     requiresArg: true,
   },
+  { name: 'clear', description: 'Clear conversation', kind: 'client' },
 ];
 
 export interface ParsedCommand {
