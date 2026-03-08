@@ -161,6 +161,8 @@ export function ChatList({
   const [, setVersion] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // useLayoutEffect so the listener is registered before paint — avoids
+  // missing events when /navigate swaps the conversation synchronously.
   useLayoutEffect(() => {
     return conversation.onChange(() => setVersion((v) => v + 1));
   }, [conversation]);
