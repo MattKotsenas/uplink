@@ -10,16 +10,17 @@ import WebSocket from 'ws';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { startServer } from '../../src/server/index.js';
+import { join as joinPath } from 'node:path';
 import type {
   JsonRpcMessage,
   JsonRpcResponse,
 } from '../../src/shared/acp-types.js';
 
 const TEST_TIMEOUT = 15_000;
-const REQUEST_TIMEOUT = 10_000;
+const REQUEST_TIMEOUT = process.platform === 'win32' ? 20_000 : 10_000;
 
 // Use absolute path so mock-agent works regardless of bridge cwd
-const MOCK_AGENT = `${process.cwd()}/src/mock/mock-agent.ts`;
+const MOCK_AGENT = joinPath(process.cwd(), 'src', 'mock', 'mock-agent.ts');
 const COPILOT_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'npx';
 const COPILOT_ARGS =
   process.platform === 'win32'
@@ -28,7 +29,7 @@ const COPILOT_ARGS =
 
 // Two directories — both must exist. Use repo root and a subdirectory.
 const DIR_A = process.cwd();
-const DIR_B = `${process.cwd()}/src`;
+const DIR_B = joinPath(process.cwd(), 'src');
 
 let server: Server;
 let port: number;
@@ -151,6 +152,9 @@ describe('Multi-directory server', () => {
       const wsA = await connectWS(DIR_A);
       const wsB = await connectWS(DIR_B);
 
+      // Give Windows time for bridge processes to stabilize
+      await new Promise((r) => setTimeout(r, 200));
+
       // Both sockets should be open simultaneously
       expect(wsA.readyState).toBe(WebSocket.OPEN);
       expect(wsB.readyState).toBe(WebSocket.OPEN);
@@ -163,10 +167,17 @@ describe('Multi-directory server', () => {
     it('replaces old socket for same directory but keeps other dirs alive', async () => {
       const wsA1 = await connectWS(DIR_A);
       const wsB = await connectWS(DIR_B);
+
+      // Give Windows time for bridge processes to stabilize
+      await new Promise((r) => setTimeout(r, 200));
+
       const wsA2 = await connectWS(DIR_A);
 
-      // wsA1 should be closed (replaced), wsA2 and wsB should be open
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for wsA1 to be closed by the server (replacement)
+      await new Promise<void>((resolve) => {
+        if (wsA1.readyState === WebSocket.CLOSED) return resolve();
+        wsA1.once('close', () => resolve());
+      });
       expect(wsA1.readyState).toBe(WebSocket.CLOSED);
       expect(wsA2.readyState).toBe(WebSocket.OPEN);
       expect(wsB.readyState).toBe(WebSocket.OPEN);
@@ -200,7 +211,7 @@ describe('Multi-directory server', () => {
       // mock-agent uses Date.now() — real Copilot CLI generates UUIDs)
       expect(typeof sessA.sessionId).toBe('string');
       expect(typeof sessB.sessionId).toBe('string');
-    }, 20_000);
+    }, process.platform === 'win32' ? 30_000 : 20_000);
   });
 });
 

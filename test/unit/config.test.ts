@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { loadConfig } from '../../src/server/config.js';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 
 describe('loadConfig', () => {
@@ -38,7 +38,7 @@ describe('loadConfig', () => {
   });
 
   it('reads UPLINK_DIRS env var', () => {
-    process.env.UPLINK_DIRS = `${dirA}:${dirB}`;
+    process.env.UPLINK_DIRS = `${dirA}${delimiter}${dirB}`;
     const config = loadConfig({ cwd: tempDir });
     expect(config.dirs).toEqual([dirA, dirB]);
   });
