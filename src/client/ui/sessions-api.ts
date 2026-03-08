@@ -1,9 +1,10 @@
 import type { SessionInfo } from '../../shared/acp-types.js';
 
 export async function fetchSessions(cwd: string): Promise<SessionInfo[]> {
-  const res = await fetch(
-    `/api/sessions?cwd=${encodeURIComponent(cwd)}`,
-  );
+  const params = new URLSearchParams();
+  if (cwd) params.set('cwd', cwd);
+  const query = params.toString();
+  const res = await fetch(query ? `/api/sessions?${query}` : '/api/sessions');
   if (!res.ok) return [];
   const data = await res.json();
   return data.sessions ?? [];

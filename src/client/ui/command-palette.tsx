@@ -5,6 +5,8 @@ export interface PaletteItem {
   detail?: string;
   /** Text to insert into the input when this item is selected. */
   fill: string;
+  /** If false, selecting only fills input and keeps autocomplete open. */
+  executeOnSelect?: boolean;
 }
 
 interface CommandPaletteProps {

@@ -10,6 +10,9 @@ import {
 import WebSocket from 'ws';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { resolve as resolvePath, join as joinPath } from 'node:path';
+import { tmpdir } from 'node:os';
 import { startServer } from '../../src/server/index.js';
 import type {
   JsonRpcMessage,
@@ -24,11 +27,8 @@ import type {
 const TEST_TIMEOUT = 15_000;
 const REQUEST_TIMEOUT = 10_000;
 const MESSAGE_TIMEOUT = 5_000;
-const COPILOT_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'npx';
-const COPILOT_ARGS =
-  process.platform === 'win32'
-    ? ['/c', 'npx', 'tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio']
-    : ['tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio'];
+const COPILOT_COMMAND = 'npx';
+const COPILOT_ARGS = ['tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio'];
 
 let server: Server;
 let port: number;
@@ -542,10 +542,15 @@ describe('Session listing and rename', () => {
   );
 
   it(
-    'requires cwd parameter for /api/sessions',
+    'defaults to server cwd when /api/sessions has no cwd parameter',
     async () => {
+      const ws = await connectWS();
+      const sessionId = await bootstrapSession(ws);
+
       const res = await fetch(`http://127.0.0.1:${port}/api/sessions`);
-      expect(res.status).toBe(400);
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { sessions: Array<{ id: string }> };
+      expect(data.sessions.some(s => s.id === sessionId)).toBe(true);
     },
     TEST_TIMEOUT,
   );
@@ -596,6 +601,110 @@ describe('Session listing and rename', () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/sessions?cwd=${encodeURIComponent('/nonexistent/path')}`);
       const data = await res.json() as { sessions: Array<{ id: string }> };
       expect(data.sessions).toHaveLength(0);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'resolves relative paths via /api/resolve-path',
+    async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/resolve-path?path=${encodeURIComponent('src')}&base=${encodeURIComponent(process.cwd())}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { cwd: string };
+      expect(data.cwd).toBe(resolvePath(process.cwd(), 'src'));
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'returns 400 when /api/resolve-path is missing path parameter',
+    async () => {
+      // Edge case: client calls endpoint without a path.
+      const res = await fetch(`http://127.0.0.1:${port}/api/resolve-path`);
+      expect(res.status).toBe(400);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'preserves absolute paths via /api/resolve-path',
+    async () => {
+      // Edge case: already-absolute paths should resolve to themselves.
+      const absolute = resolvePath(process.cwd(), 'src/client');
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/resolve-path?path=${encodeURIComponent(absolute)}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { cwd: string };
+      expect(data.cwd).toBe(absolute);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'returns 404 for missing paths via /api/resolve-path',
+    async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/resolve-path?path=${encodeURIComponent('/definitely/not/a/real/path')}`,
+      );
+      expect(res.status).toBe(404);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'returns directory completions for /api/path-completions',
+    async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/path-completions?prefix=${encodeURIComponent('src/')}&base=${encodeURIComponent(process.cwd())}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { completions: Array<{ path: string; cwd: string }> };
+      expect(data.completions.some((c) => c.path === 'src/client/')).toBe(true);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'supports partial segment matching for /api/path-completions',
+    async () => {
+      // Edge case: typing "src/cl" should suggest "src/client/".
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/path-completions?prefix=${encodeURIComponent('src/cl')}&base=${encodeURIComponent(process.cwd())}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { completions: Array<{ path: string; cwd: string }> };
+      expect(data.completions.some((c) => c.path === 'src/client/')).toBe(true);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'returns only directory-style completions for /api/path-completions',
+    async () => {
+      // Edge case: file names should never appear in directory completion results.
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/path-completions?prefix=${encodeURIComponent('src/client/')}&base=${encodeURIComponent(process.cwd())}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { completions: Array<{ path: string }> };
+      expect(data.completions.every((c) => c.path.endsWith('/'))).toBe(true);
+      expect(data.completions.some((c) => c.path.includes('main.ts'))).toBe(false);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'returns empty completions for unknown /api/path-completions root',
+    async () => {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/path-completions?prefix=${encodeURIComponent('/definitely/not/a/real/path/')}`,
+      );
+      expect(res.ok).toBe(true);
+      const data = await res.json() as { completions: Array<{ path: string }> };
+      expect(data.completions).toEqual([]);
     },
     TEST_TIMEOUT,
   );
@@ -746,4 +855,131 @@ describe('Eager initialize', () => {
     },
     TEST_TIMEOUT,
   );
+});
+
+// ── COPILOT_COMMAND parsing tests ─────────────────────────────────────
+describe('COPILOT_COMMAND parsing', () => {
+  it(
+    'handles quoted command arguments with spaces',
+    async () => {
+      // Edge case: command strings often include quoted paths with spaces
+      // (e.g., "Program Files" on Windows). We should parse those safely.
+      const scriptWithSpace = resolvePath('src/mock/mock agent.ts');
+      cpSync(resolvePath('src/mock/mock-agent.ts'), scriptWithSpace);
+
+      const previousCopilotCommand = process.env.COPILOT_COMMAND;
+      process.env.COPILOT_COMMAND = `"npx" tsx "${scriptWithSpace}" --acp --stdio`;
+
+      let localServer: Server | undefined;
+      let localResult: ReturnType<typeof startServer> | undefined;
+      let ws: WebSocket | undefined;
+
+      try {
+        localResult = startServer({ port: 0 });
+        localServer = localResult.server;
+        await new Promise<void>((resolve) => localServer!.listen(0, '127.0.0.1', () => resolve()));
+        const localPort = (localServer.address() as AddressInfo).port;
+
+        ws = new WebSocket(
+          `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(localResult.sessionToken)}`,
+        );
+        await new Promise<void>((resolve, reject) => {
+          ws!.on('open', () => resolve());
+          ws!.on('error', reject);
+        });
+
+        const result = await rpcRequest<{ protocolVersion: number; agentInfo?: { name: string } }>(
+          ws,
+          'initialize',
+          { protocolVersion: 1, clientCapabilities: {} },
+        );
+        expect(result.protocolVersion).toBe(1);
+        expect(result.agentInfo?.name).toBe('mock-agent');
+      } finally {
+        process.env.COPILOT_COMMAND = previousCopilotCommand;
+        if (ws && ws.readyState !== WebSocket.CLOSED) {
+          ws.close();
+          await new Promise<void>((resolve) => ws!.once('close', () => resolve()));
+        }
+        localResult?.close();
+        if (localServer) {
+          await new Promise<void>((resolve, reject) => {
+            localServer!.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+        try { rmSync(scriptWithSpace, { force: true }); } catch { /* Windows EBUSY */ }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+// ── Session close endpoint tests ──────────────────────────────────────
+describe('POST /api/session/close', () => {
+  it(
+    'closes a bridge and frees the session slot',
+    async () => {
+      const tempDir = mkdtempSync(joinPath(tmpdir(), 'session-close-'));
+      let localServer: Server | undefined;
+      let localResult: ReturnType<typeof startServer> | undefined;
+
+      try {
+        localResult = startServer({
+          port: 0,
+          copilotCommand: COPILOT_COMMAND,
+          copilotArgs: COPILOT_ARGS,
+        });
+        localServer = localResult.server;
+        await new Promise<void>((resolve) =>
+          localServer!.listen(0, '127.0.0.1', () => resolve()),
+        );
+        const localPort = (localServer.address() as AddressInfo).port;
+        const tok = localResult.sessionToken;
+
+        // Connect to an additional directory to create a bridge
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${localPort}/ws?token=${encodeURIComponent(tok)}&cwd=${encodeURIComponent(tempDir)}`,
+        );
+        await new Promise<void>((resolve, reject) => {
+          ws.on('open', () => resolve());
+          ws.on('error', reject);
+        });
+
+        // Close the session via the API
+        const res = await fetch(`http://127.0.0.1:${localPort}/api/session/close`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd: tempDir }),
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { ok: boolean };
+        expect(body.ok).toBe(true);
+
+        // WebSocket should be closed by the server
+        await new Promise<void>((resolve) => {
+          if (ws.readyState === WebSocket.CLOSED) return resolve();
+          ws.once('close', () => resolve());
+        });
+        expect(ws.readyState).toBe(WebSocket.CLOSED);
+      } finally {
+        localResult?.close();
+        if (localServer) {
+          await new Promise<void>((resolve, reject) => {
+            localServer!.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+        try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* Windows EBUSY */ }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  it('returns 400 when cwd is missing', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/session/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
 });

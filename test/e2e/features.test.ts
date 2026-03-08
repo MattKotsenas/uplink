@@ -102,7 +102,7 @@ test('slash command palette appears on / keystroke', async ({ page }) => {
   await expect(palette).toBeVisible();
 
   // Should show available commands
-  await expect(palette.locator('.command-palette-item')).toHaveCount(8); // 8 commands
+  await expect(palette.locator('.command-palette-item')).toHaveCount(11); // all registered commands
 
   // Type more to filter
   await input.fill('/mo');
@@ -135,6 +135,197 @@ test('clicking a command shows sub-options in palette', async ({ page }) => {
   await expect(palette).toBeVisible();
   await expect(palette.locator('.command-palette-item')).toHaveCount(2);
   await expect(palette.locator('.command-palette-label').first()).toContainText('Rename');
+});
+
+test('/navigate shows current session suggestions by default', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
+
+  await input.fill('/navigate ');
+  await expect(palette).toBeVisible();
+  await expect(palette.locator('.command-palette-item')).toHaveCount(1);
+  await expect(palette.locator('.command-palette-detail').first()).toContainText(process.cwd());
+});
+
+test('/navigate path autocomplete lists available child directories', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
+
+  await input.fill('/navigate src/');
+  await expect(palette).toBeVisible();
+  await expect(palette.locator('.command-palette-label').filter({ hasText: 'src/client/' })).toHaveCount(1);
+});
+
+test('/navigate session suggestion click executes immediately', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
+
+  // Session suggestions should execute directly when clicked.
+  await input.fill('/navigate ');
+  await expect(palette).toBeVisible();
+  await palette.locator('.command-palette-item').first().click();
+  await expect(page.locator('.message.system').filter({ hasText: 'Navigated to' })).toBeVisible({ timeout: 10000 });
+});
+
+test('/navigate path completion click only fills input', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  const palette = page.locator('.command-palette');
+  const navigatedMessage = page.locator('.message.system').filter({ hasText: 'Navigated to' });
+
+  // Path completions should fill the command, not auto-run it.
+  await input.fill('/navigate src/');
+  await expect(palette).toBeVisible();
+  await palette.locator('.command-palette-label').filter({ hasText: 'src/client/' }).first().click();
+  await expect(input).toHaveValue('/navigate src/client/');
+  await expect(navigatedMessage).toHaveCount(0);
+  await expect(page.locator('.session-dot')).toHaveCount(0);
+});
+
+test('/navigate invalid path shows friendly error', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  // Invalid paths should show a clear system error message.
+  await page.locator('#prompt-input').fill('/navigate /definitely/not/a/real/path');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.system').filter({ hasText: 'Navigate failed:' })).toBeVisible({ timeout: 10000 });
+});
+
+test('directory tag shows folder name, fixed size, and full-path tooltip', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const dirLabel = page.locator('#dir-label');
+  const input = page.locator('#prompt-input');
+  const currentFolder = process.cwd().split(/[\\/]/).filter(Boolean).pop();
+
+  // We show only the current folder in the badge, not the full path.
+  await expect(dirLabel).toBeVisible();
+  await expect(dirLabel).toHaveText(currentFolder!);
+  await expect(dirLabel).toHaveAttribute('title', process.cwd());
+
+  const beforeWidth = await dirLabel.evaluate((el) => getComputedStyle(el).width);
+
+  // Clicking should expose the tooltip state with the full path.
+  await dirLabel.click();
+  await expect(dirLabel).toHaveAttribute('data-tooltip-open', 'true');
+
+  await input.fill('/navigate src/client');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.system').filter({ hasText: 'Navigated to' })).toBeVisible({ timeout: 10000 });
+
+  await expect(dirLabel).toHaveText('client');
+  await expect(dirLabel).toHaveAttribute('title', /src[\\/]client$/);
+  const afterWidth = await dirLabel.evaluate((el) => getComputedStyle(el).width);
+  expect(afterWidth).toBe(beforeWidth);
+});
+
+test('session dots persist across page reload', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  const input = page.locator('#prompt-input');
+  await input.fill('/navigate src/client');
+  await page.locator('#send-btn').click();
+  await expect(page.locator('.message.system').filter({ hasText: 'Navigated to' })).toBeVisible({ timeout: 10000 });
+
+  await expect(page.locator('.session-dot')).toHaveCount(2);
+
+  await page.reload();
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+  await expect(page.locator('.session-dot')).toHaveCount(2);
+});
+
+test('session limit prevents more than 5 active sessions', async ({ page }) => {
+  test.setTimeout(120_000); // each navigate spawns a bridge — generous timeout for CI
+
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
+
+  const input = page.locator('#prompt-input');
+  const sendBtn = page.locator('#send-btn');
+  const cwd = process.cwd();
+
+  // Navigate to 4 additional directories, waiting for each to fully initialize
+  // (the "Navigated to" system message) before starting the next one.
+  const dirs = [`${cwd}/src`, `${cwd}/test`, `${cwd}/docs`, `${cwd}/bin`];
+  for (let i = 0; i < dirs.length; i++) {
+    await input.fill(`/navigate ${dirs[i]}`);
+    await sendBtn.click({ force: true });
+    // Wait for the navigation to fully complete (bridge spawn + init + new session)
+    await expect(
+      page.locator('.message.system').filter({ hasText: `Navigated to ${dirs[i]}` }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('.session-dot')).toHaveCount(i + 2);
+  }
+
+  // Should now have 5 dots (boot cwd + 4 navigated)
+  await expect(page.locator('.session-dot')).toHaveCount(5);
+
+  // The 6th navigate fails at the client level (before WS connect)
+  await input.fill(`/navigate ${cwd}/scripts`);
+  await sendBtn.click({ force: true });
+  await expect(
+    page.locator('.message.system').filter({ hasText: /Session limit|max 5/ }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Still only 5 dots
+  await expect(page.locator('.session-dot')).toHaveCount(5);
+});
+
+test('/exit closes current session and switches to another', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
+
+  const input = page.locator('#prompt-input');
+  const sendBtn = page.locator('#send-btn');
+  const cwd = process.cwd();
+
+  // Navigate to a second directory and wait for it to fully initialize
+  await input.fill(`/navigate ${cwd}/src`);
+  await sendBtn.click({ force: true });
+  await expect(
+    page.locator('.message.system').filter({ hasText: `Navigated to ${cwd}/src` }),
+  ).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.session-dot')).toHaveCount(2);
+
+  // Exit the current session (src)
+  await input.fill('/exit');
+  await sendBtn.click({ force: true });
+  await expect(
+    page.locator('.message.system').filter({ hasText: 'Session closed' }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Back to 1 session — dots hidden, but dir label should show the remaining session
+  await expect(page.locator('#dir-label')).toBeVisible();
+  const currentFolder = cwd.split(/[\\/]/).filter(Boolean).pop();
+  await expect(page.locator('#dir-label')).toHaveText(currentFolder!);
+});
+
+test('/exit on the only session shows an error', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
+
+  await page.locator('#prompt-input').fill('/exit');
+  await page.locator('#send-btn').click();
+  await expect(
+    page.locator('.message.system').filter({ hasText: 'Cannot close the only session' }),
+  ).toBeVisible({ timeout: 5000 });
+
+  // Dots are hidden when there's only 1 session — verify session is still alive
+  await expect(page.locator('#dir-label')).toBeVisible();
 });
 
 test('/model shows available models in autocomplete', async ({ page }) => {
@@ -238,10 +429,14 @@ test('session is preserved across /model commands', async ({ page }) => {
   await page.locator('#send-btn').click();
   await expect(page.locator('.message.agent').first()).toBeVisible({ timeout: 10000 });
 
+  const readResumeSessionId = () =>
+    page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('uplink-resume-session'));
+      return key ? localStorage.getItem(key) : null;
+    });
+
   // Verify session is in localStorage
-  const sessionBefore = await page.evaluate(() =>
-    localStorage.getItem('uplink-resume-session'),
-  );
+  const sessionBefore = await readResumeSessionId();
   expect(sessionBefore).toBeTruthy();
 
   // Send /model command — should NOT disconnect/reconnect
@@ -249,9 +444,7 @@ test('session is preserved across /model commands', async ({ page }) => {
   await page.locator('#send-btn').click();
 
   // Session should still be the same
-  const sessionAfter = await page.evaluate(() =>
-    localStorage.getItem('uplink-resume-session'),
-  );
+  const sessionAfter = await readResumeSessionId();
   expect(sessionAfter).toBe(sessionBefore);
 });
 
@@ -260,9 +453,10 @@ test('session is persisted to localStorage for page reload resume', async ({ pag
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
   // After connecting, uplink-resume-session should be saved in localStorage
-  const sessionId = await page.evaluate(() =>
-    localStorage.getItem('uplink-resume-session'),
-  );
+  const sessionId = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith('uplink-resume-session'));
+    return key ? localStorage.getItem(key) : null;
+  });
   expect(sessionId).toBeTruthy();
   expect(sessionId).toMatch(/^mock-session-/);
 });
@@ -619,7 +813,7 @@ test('thinking content blocks render as collapsible reasoning', async ({ page })
   await page.locator('#send-btn').click();
 
   // Wait for the agent response (follows the thinking blocks)
-  const agentMsg = page.locator('.message.agent').first();
+  const agentMsg = page.locator('.message.agent').last();
   await expect(agentMsg).toBeVisible({ timeout: 10000 });
   await expect(agentMsg).toContainText('thinking it through');
 
