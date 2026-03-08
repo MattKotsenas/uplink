@@ -23,7 +23,6 @@ export interface ServerOptions {
   copilotCommand?: string;        // default: process.env.COPILOT_COMMAND || 'copilot'
   copilotArgs?: string[];         // default: ['--acp', '--stdio']
   cwd?: string;                   // working directory for copilot
-  dirs?: string[];                // multi-dir mode: allowed directories
 }
 
 export interface ServerResult {
@@ -188,9 +187,6 @@ export function startServer(options: ServerOptions): ServerResult {
   const sessionToken = randomBytes(32).toString('hex');
 
   const resolvedCwd = options.cwd || process.cwd();
-  const configuredDirs = options.dirs && options.dirs.length > 0 ? options.dirs : [];
-  const multiDir = configuredDirs.length > 0;
-  const allowedDirs = new Set(configuredDirs);
 
   function isExistingDirectory(cwd: string): boolean {
     try {
@@ -217,13 +213,6 @@ export function startServer(options: ServerOptions): ServerResult {
     };
   }
 
-  /** Validate that a cwd is allowed. In single-dir mode, any existing directory is allowed. */
-  function isAllowedCwd(cwd: string): boolean {
-    if (!isExistingDirectory(cwd)) return false;
-    if (!multiDir) return true;
-    return allowedDirs.has(cwd);
-  }
-
   // Token endpoint (must be before SPA fallback)
   app.get('/api/token', (_req, res) => {
     res.json({ token: sessionToken, cwd: resolvedCwd });
@@ -238,8 +227,8 @@ export function startServer(options: ServerOptions): ServerResult {
 
     const base = (req.query.base as string | undefined) ?? resolvedCwd;
     const cwd = resolveRequestedCwd(requestedPath, base);
-    if (!isAllowedCwd(cwd)) {
-      res.status(404).json({ error: 'Directory not found or not allowed' });
+    if (!isExistingDirectory(cwd)) {
+      res.status(404).json({ error: 'Directory not found' });
       return;
     }
 
@@ -263,7 +252,7 @@ export function startServer(options: ServerOptions): ServerResult {
       .filter((entry) => entry.name.toLowerCase().startsWith(fragmentLower))
       .map((entry) => {
         const cwd = path.join(listRoot, entry.name);
-        if (!isAllowedCwd(cwd)) return null;
+        if (!isExistingDirectory(cwd)) return null;
         return {
           path: `${dirPrefix}${entry.name}/`,
           cwd,
@@ -280,9 +269,9 @@ export function startServer(options: ServerOptions): ServerResult {
     res.json({ completions });
   });
 
-  // Config endpoint — tells the client about multi-dir mode
+  // Config endpoint
   app.get('/api/config', (_req, res) => {
-    res.json({ dirs: configuredDirs, multiDir, cwd: resolvedCwd });
+    res.json({ cwd: resolvedCwd });
   });
 
   // Sessions endpoint — forwards session/list to the CLI bridge and merges
@@ -291,7 +280,7 @@ export function startServer(options: ServerOptions): ServerResult {
     const requestedCwd = req.query.cwd as string | undefined;
     const base = req.query.base as string | undefined;
     const cwd = requestedCwd ? resolveRequestedCwd(requestedCwd, base) : resolvedCwd;
-    if (!isAllowedCwd(cwd)) {
+    if (!isExistingDirectory(cwd)) {
       res.json({ sessions: [] });
       return;
     }
@@ -384,7 +373,7 @@ export function startServer(options: ServerOptions): ServerResult {
   const server = createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  // Track active sockets per cwd (one per directory in multi-dir mode)
+  // Track active sockets per cwd (one per directory)
   const activeSockets = new Map<string, WebSocket>();
 
   /** Internal request ID counter for server-originated RPC calls. */
@@ -619,8 +608,8 @@ export function startServer(options: ServerOptions): ServerResult {
     const requestedCwd = requestedCwdParam
       ? resolveRequestedCwd(requestedCwdParam, baseCwdParam ?? resolvedCwd)
       : resolvedCwd;
-    if (!isAllowedCwd(requestedCwd)) {
-      ws.close(4003, 'Directory not allowed');
+    if (!isExistingDirectory(requestedCwd)) {
+      ws.close(4003, 'Directory not found');
       return;
     }
 
