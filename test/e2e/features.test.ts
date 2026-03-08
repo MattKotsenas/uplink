@@ -102,7 +102,7 @@ test('slash command palette appears on / keystroke', async ({ page }) => {
   await expect(palette).toBeVisible();
 
   // Should show available commands
-  await expect(palette.locator('.command-palette-item')).toHaveCount(8); // 8 commands
+  await expect(palette.locator('.command-palette-item')).toHaveCount(11); // all registered commands
 
   // Type more to filter
   await input.fill('/mo');
@@ -257,11 +257,13 @@ test('session limit prevents more than 5 active sessions', async ({ page }) => {
   const cwd = process.cwd();
 
   // Navigate to 4 additional directories using absolute paths (1 already exists from boot).
+  // Wait for send button re-enable after each navigate (connection must finish).
   const dirs = [`${cwd}/src`, `${cwd}/test`, `${cwd}/docs`, `${cwd}/bin`];
   for (let i = 0; i < dirs.length; i++) {
     await input.fill(`/navigate ${dirs[i]}`);
     await sendBtn.click();
     await expect(page.locator('.session-dot')).toHaveCount(i + 2, { timeout: 10000 });
+    await expect(sendBtn).toBeEnabled({ timeout: 10000 });
   }
 
   // Should now have 5 dots (boot cwd + 4 navigated)
