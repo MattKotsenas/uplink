@@ -251,9 +251,6 @@ test('session dots persist across page reload', async ({ page }) => {
 test('session limit prevents more than 5 active sessions', async ({ page }) => {
   test.setTimeout(120_000); // each navigate spawns a bridge — generous timeout for CI
 
-  // Close stale bridge contexts from prior tests sharing this server
-  await page.request.post('http://localhost:3000/api/sessions/close-all');
-
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
 
@@ -289,9 +286,6 @@ test('session limit prevents more than 5 active sessions', async ({ page }) => {
 });
 
 test('/exit closes current session and switches to another', async ({ page }) => {
-  // Close stale bridge contexts from prior tests
-  await page.request.post('http://localhost:3000/api/sessions/close-all');
-
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 15000 });
 
