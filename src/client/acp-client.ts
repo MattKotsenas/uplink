@@ -101,6 +101,11 @@ export class AcpClient {
     return this.sessionId;
   }
 
+  /** Scope localStorage keys by cwd to avoid conflicts in multi-dir mode. */
+  private storageKey(base: string): string {
+    return `${base}:${this.options.cwd}`;
+  }
+
   connect(): Promise<void> {
     if (this.state === "ready" || this.state === "prompting") {
       return Promise.resolve();
@@ -119,7 +124,7 @@ export class AcpClient {
       mcpServers: [],
     } satisfies SessionLoadParams);
     this.sessionId = sessionId;
-    localStorage.setItem('uplink-resume-session', sessionId);
+    localStorage.setItem(this.storageKey('uplink-resume-session'), sessionId);
   }
 
   async newSession(): Promise<void> {
@@ -129,9 +134,9 @@ export class AcpClient {
       { cwd: this.options.cwd, mcpServers: [] },
     );
     this.sessionId = result.sessionId;
-    localStorage.setItem('uplink-resume-session', result.sessionId);
+    localStorage.setItem(this.storageKey('uplink-resume-session'), result.sessionId);
     if (result.models?.availableModels) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
+      localStorage.setItem(this.storageKey('uplink-cached-models'), JSON.stringify(result.models));
       this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
     }
   }
@@ -286,7 +291,7 @@ export class AcpClient {
     this.agentCapabilities = initResult.agentCapabilities ?? {};
 
     // Try to resume a saved session (e.g., after page reload)
-    const resumeId = localStorage.getItem('uplink-resume-session');
+    const resumeId = localStorage.getItem(this.storageKey('uplink-resume-session'));
     if (resumeId && this.agentCapabilities.loadSession) {
       try {
         const tLoad = performance.now();
@@ -299,7 +304,7 @@ export class AcpClient {
         console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
         this.sessionId = loadResult.sessionId ?? resumeId;
         if (loadResult.models?.availableModels) {
-          localStorage.setItem('uplink-cached-models', JSON.stringify(loadResult.models));
+          localStorage.setItem(this.storageKey('uplink-cached-models'), JSON.stringify(loadResult.models));
           this.options.onModelsAvailable?.(loadResult.models.availableModels, loadResult.models.currentModelId);
         } else {
           this.restoreCachedModels();
@@ -308,7 +313,7 @@ export class AcpClient {
       } catch (err) {
         // session/load failed — clear stale key and fall through to new session
         console.debug('[resume] session/load failed:', err);
-        localStorage.removeItem('uplink-resume-session');
+        localStorage.removeItem(this.storageKey('uplink-resume-session'));
       }
     }
 
@@ -320,16 +325,16 @@ export class AcpClient {
     console.debug(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
     console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
     this.sessionId = result.sessionId;
-    localStorage.setItem('uplink-resume-session', result.sessionId);
+    localStorage.setItem(this.storageKey('uplink-resume-session'), result.sessionId);
 
     if (result.models?.availableModels) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
+      localStorage.setItem(this.storageKey('uplink-cached-models'), JSON.stringify(result.models));
       this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
     }
   }
 
   private restoreCachedModels(): void {
-    const cached = localStorage.getItem('uplink-cached-models');
+    const cached = localStorage.getItem(this.storageKey('uplink-cached-models'));
     if (cached) {
       try {
         const models = JSON.parse(cached);
@@ -337,7 +342,7 @@ export class AcpClient {
           this.options.onModelsAvailable?.(models.availableModels, models.currentModelId);
         }
       } catch {
-        localStorage.removeItem('uplink-cached-models');
+        localStorage.removeItem(this.storageKey('uplink-cached-models'));
       }
     }
   }

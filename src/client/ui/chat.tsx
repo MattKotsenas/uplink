@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { Conversation, ConversationMessage } from '../conversation.js';
 import type { TimelineEntry } from '../conversation.js';
 import { ToolCallCard } from './tool-call.js';
@@ -161,7 +161,7 @@ export function ChatList({
   const [, setVersion] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return conversation.onChange(() => setVersion((v) => v + 1));
   }, [conversation]);
 

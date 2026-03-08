@@ -38,6 +38,9 @@ html.dark {
   --accent: #cba6f7;
   --accent-hover: #b4befe;
   --accent-subtle: rgb(203 166 247 / 15%);
+  --accent-border: rgb(203 166 247 / 20%);
+  --accent-border-hover: rgb(203 166 247 / 40%);
+  --accent-glow: rgb(203 166 247 / 12%);
   --border: #45475a;
   --danger: #f38ba8;
   --success: #a6e3a1;
@@ -59,6 +62,9 @@ html.light {
   --accent: #8839ef;
   --accent-hover: #7287fd;
   --accent-subtle: rgb(136 57 239 / 10%);
+  --accent-border: rgb(136 57 239 / 20%);
+  --accent-border-hover: rgb(136 57 239 / 35%);
+  --accent-glow: rgb(136 57 239 / 10%);
   --border: #ccd0da;
   --danger: #d20f39;
   --success: #40a02b;
@@ -124,6 +130,7 @@ body, html {
   height: 100dvh;                      /* shrinks when mobile keyboard opens */
   max-width: 800px;
   margin: 0 auto;
+  position: relative;
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
   overflow: hidden;
@@ -158,6 +165,74 @@ body, html {
 
 .header-icon {
   border-radius: var(--radius-md);
+}
+
+.dir-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: 0;
+  position: relative;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.dir-label::before {
+  content: '/';
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.dir-label:hover {
+  color: var(--text-primary);
+}
+
+.dir-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.dir-label:not([data-full-path])::after {
+  content: none;
+}
+
+.dir-label::after {
+  content: attr(data-full-path);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  inline-size: min(80vw, 28rem);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 20;
+}
+
+.dir-label:is(:hover, :focus-visible, [data-tooltip-open='true'])::after {
+  opacity: 1;
 }
 
 #connection-status {
@@ -926,6 +1001,10 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10
   #header h1 {
     font-size: var(--text-lg);
   }
+
+  .dir-label {
+    max-inline-size: 8.5rem;
+  }
 }
 
 /* Sessions Panel */
@@ -1090,4 +1169,175 @@ html.light .hljs-deletion { color: #d20f39; background-color: rgb(210 15 57 / 10
   margin-top: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
+}
+
+/* ─── Session Dots Carousel ─────────────────────────────────────── */
+
+#session-dots-mount {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-4) 0;
+}
+
+.session-carousel {
+  display: flex;
+  justify-content: center;
+}
+
+.session-dots-track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  padding: var(--space-1) var(--space-1);
+  scroll-padding-inline: var(--space-1);
+}
+
+.session-dots-track::-webkit-scrollbar {
+  display: none;
+}
+
+.session-dot {
+  width: 8px;
+  height: 8px;
+  border: none;
+  border-radius: 50%;
+  background-color: currentColor;
+  color: var(--border);
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: transform 0.15s, background-color 0.15s;
+}
+
+.session-dot:hover {
+  background-color: var(--text-secondary);
+  transform: scale(1.1);
+}
+
+.session-dot.active {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-subtle);
+}
+
+.session-dot-status-idle {
+  color: var(--success);
+}
+
+.session-dot-status-busy {
+  color: var(--warning);
+}
+
+.session-dot-status-initializing {
+  color: var(--info);
+}
+
+.session-dot-status-disconnected {
+  color: var(--border);
+}
+
+.session-swipe-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  opacity: 0.24;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.session-swipe-hint .material-symbols-outlined {
+  font-size: var(--text-xl);
+}
+
+.session-swipe-hint-left {
+  left: var(--space-2);
+}
+
+.session-swipe-hint-right {
+  right: var(--space-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .session-swipe-hint {
+    display: none;
+  }
+}
+
+.directories-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.directories-heading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.directory-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+  text-align: left;
+  font-family: var(--font-mono);
+}
+
+.directory-card:hover {
+  background-color: var(--accent-subtle);
+}
+
+.directory-card-icon {
+  color: var(--accent);
+  font-size: var(--text-base);
+  flex-shrink: 0;
+}
+
+.directory-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.directory-card-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-card-path {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-card-active {
+  background-color: var(--accent-subtle);
+  border-color: var(--border);
+}
+
+.directory-card-active .directory-card-name::after {
+  content: " ●";
+  color: var(--success);
+  font-size: var(--text-xs);
 }

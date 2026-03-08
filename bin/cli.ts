@@ -9,6 +9,7 @@ import { startServer } from '../src/server/index.js';
 import { hashCwd, getTunnelInfo, createTunnel, updateTunnelPort, startTunnel, stopTunnel, type TunnelResult } from '../src/server/tunnel.js';
 import { resolvePort } from '../src/server/resolve-port.js';
 import { isPortAvailable } from '../src/server/is-port-available.js';
+import { loadConfig } from '../src/server/config.js';
 
 const require = createRequire(import.meta.url);
 
@@ -43,6 +44,7 @@ const program = new Command()
   .option('--tunnel-id <name>', 'use a pre-created devtunnel (no auto-setup)')
   .option('--allow-anonymous', 'allow anonymous tunnel access (no GitHub auth)')
   .option('--cwd <path>', 'working directory for Copilot', process.cwd())
+  .option('--dirs <paths>', 'comma-separated directories for multi-dir mode')
   .option('--verbose', 'enable debug logging (DEBUG=uplink:*)')
   .parse();
 
@@ -52,6 +54,7 @@ const opts = program.opts<{
   tunnelId?: string;
   allowAnonymous?: boolean;
   cwd: string;
+  dirs?: string;
   verbose?: boolean;
 }>();
 
@@ -124,6 +127,7 @@ async function main() {
 
   const staticDir = resolveStaticDir();
   const cwd = resolve(opts.cwd);
+  const config = loadConfig({ cliDirs: opts.dirs, cwd });
   const { port: desiredPort, tunnelName } = resolvePort({
     cwd,
     explicitPort,
@@ -145,7 +149,7 @@ async function main() {
   }
 
   // ── Step 1: Server ──────────────────────────────────────────────────
-  const result = startServer({ port: listenPort, staticDir, cwd });
+  const result = startServer({ port: listenPort, staticDir, cwd, dirs: config.dirs });
   await listenOrThrow(result.server, listenPort);
 
   const { server, close, initializePromise } = result;

@@ -20,6 +20,8 @@ export interface SlashCommand {
   description: string;
   /** "cli" commands are sent as session/prompt. "client" commands are intercepted. */
   kind: 'cli' | 'client';
+  /** If true, command requires freeform argument text to execute. */
+  requiresArg?: boolean;
   /** Static sub-options (e.g., /theme light|dark|auto). */
   options?: SlashCommandOption[];
   /** Dynamic sub-options resolved at runtime (e.g., /model lists from ACP). */
@@ -86,6 +88,14 @@ export const commands: SlashCommand[] = [
       { label: 'List', value: 'list' },
     ],
   },
+  { name: 'exit', description: 'Close current session', kind: 'client' },
+  { name: 'quit', description: 'Close current session', kind: 'client' },
+  {
+    name: 'navigate',
+    description: 'Create a new session in another path',
+    kind: 'client',
+    requiresArg: true,
+  },
   { name: 'clear', description: 'Clear conversation', kind: 'client' },
 ];
 
@@ -109,6 +119,10 @@ export function parseSlashCommand(text: string): ParsedCommand | undefined {
   if (!command) {
     // Unknown slash command — send to CLI as-is
     return { command: `/${name}`, arg, kind: 'cli', complete: true };
+  }
+
+  if (command.requiresArg) {
+    return { command: `/${command.name}`, arg, kind: command.kind, complete: arg.length > 0 };
   }
 
   // A command is "complete" if it has no options, or if an arg satisfies the requirement
