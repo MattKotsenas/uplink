@@ -27,11 +27,8 @@ import type {
 const TEST_TIMEOUT = 15_000;
 const REQUEST_TIMEOUT = 10_000;
 const MESSAGE_TIMEOUT = 5_000;
-const COPILOT_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'npx';
-const COPILOT_ARGS =
-  process.platform === 'win32'
-    ? ['/c', 'npx', 'tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio']
-    : ['tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio'];
+const COPILOT_COMMAND = 'npx';
+const COPILOT_ARGS = ['tsx', 'src/mock/mock-agent.ts', '--acp', '--stdio'];
 
 let server: Server;
 let port: number;
@@ -862,11 +859,8 @@ describe('Eager initialize', () => {
 
 // ── COPILOT_COMMAND parsing tests ─────────────────────────────────────
 describe('COPILOT_COMMAND parsing', () => {
-  // This test spawns a real bridge via COPILOT_COMMAND env var with quoted paths.
-  // On Windows, cmd.exe quote handling differs — the parsing logic is unit-tested
-  // separately via splitCommandString, so we skip the integration test on Windows.
-  it.skipIf(process.platform === 'win32')(
-    'handles quoted command arguments with spaces (Windows-safe startup behavior)',
+  it(
+    'handles quoted command arguments with spaces',
     async () => {
       // Edge case: command strings often include quoted paths with spaces
       // (e.g., "Program Files" on Windows). We should parse those safely.

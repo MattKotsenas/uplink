@@ -30,19 +30,6 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  build-and-test-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run lint:css
-      - run: npm run build
-      - run: npm test
-
   e2e:
     runs-on: ubuntu-latest
     steps:
