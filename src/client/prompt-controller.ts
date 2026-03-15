@@ -1,6 +1,8 @@
 import type { AcpClient } from './acp-client.js';
+import { debugLog } from './acp-client.js';
 import type { Conversation } from './conversation.js';
 import type { SessionInfo } from '../shared/acp-types.js';
+import type { DebugLogExport, DebugSnapshot } from '../shared/debug-log.js';
 import { parseSlashCommand, findModelName } from './slash-commands.js';
 
 // --- Types -----------------------------------------------------------------
@@ -139,6 +141,9 @@ export function handleClientCommand(command: string, arg: string, deps: PromptCo
     case '/clear':
       handleClearCommand(deps);
       return undefined;
+    case '/debug':
+      handleDebugCommand(deps);
+      return undefined;
   }
   return undefined;
 }
@@ -156,6 +161,68 @@ export async function handleClearCommand(deps: PromptControllerDeps): Promise<vo
   } catch (err) {
     console.error('Failed to send /clear:', err);
   }
+}
+
+export async function handleDebugCommand(deps: PromptControllerDeps): Promise<void> {
+  const { client, conversation } = deps;
+
+  const snapshot: DebugSnapshot = {
+    connectionState: client.connectionState,
+    messageCount: conversation.messages.value.length,
+    toolCallCount: conversation.toolCalls.value.size,
+    timelineLength: conversation.timeline.value.length,
+    pendingPermissions: conversation.pendingPermissions.length,
+    localStorage: collectLocalStorage(),
+  };
+
+  // Fetch server-side debug entries
+  let serverEntries: unknown[] = [];
+  try {
+    const resp = await fetch('/api/debug');
+    if (resp.ok) {
+      const data = await resp.json();
+      serverEntries = data.entries ?? [];
+    }
+  } catch {
+    // Server unreachable - export client-only
+  }
+
+  const exportData: DebugLogExport = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sessionId: client.currentSessionId ?? null,
+    userAgent: navigator.userAgent,
+    uptime: performance.now(),
+    client: {
+      entries: debugLog.entries(),
+      snapshot,
+    },
+    server: {
+      entries: serverEntries as DebugLogExport['server']['entries'],
+    },
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `uplink-debug-${timestamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  conversation.addSystemMessage('Debug log downloaded');
+}
+
+function collectLocalStorage(): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('uplink-')) {
+      result[key] = localStorage.getItem(key) ?? '';
+    }
+  }
+  return result;
 }
 
 export async function handleSessionCommand(arg: string, deps: PromptControllerDeps): Promise<void> {
