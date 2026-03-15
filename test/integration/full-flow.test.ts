@@ -13,17 +13,28 @@ import type { AddressInfo } from 'node:net';
 import { startServer } from '../../src/server/index.js';
 import type {
   JsonRpcMessage,
-  JsonRpcNotification,
   JsonRpcRequest,
-  JsonRpcResponse,
-  SessionPromptParams,
   SessionPromptResult,
-  SessionUpdate,
 } from '../../src/shared/acp-types.js';
+import {
+  connectWS as rawConnectWS,
+  closeSocket,
+  rpcRequest as rawRpcRequest,
+  promptAndCollect as rawPromptAndCollect,
+  createIdAllocator,
+  createPromptParams,
+  wsSend,
+  sendNotification,
+  sendPermissionResponse,
+  waitForMessage,
+  expectStopReason,
+  getSessionUpdates,
+  isResponse,
+  isRequest,
+  isSessionUpdateNotification,
+} from '../fixtures/ws-helpers.js';
 
 const TEST_TIMEOUT = 15_000;
-const REQUEST_TIMEOUT = 10_000;
-const MESSAGE_TIMEOUT = 5_000;
 const COPILOT_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'npx';
 const COPILOT_ARGS =
   process.platform === 'win32'
@@ -34,7 +45,7 @@ let server: Server;
 let port: number;
 let sessionToken: string;
 const sockets: WebSocket[] = [];
-let nextJsonRpcId = 1;
+let allocateId: () => number;
 
 beforeAll(async () => {
   const result = startServer({
@@ -61,7 +72,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  nextJsonRpcId = 1;
+  allocateId = createIdAllocator();
 });
 
 afterEach(async () => {
@@ -73,188 +84,18 @@ function wsUrl(): string {
 }
 
 function connectWS(): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl());
+  return rawConnectWS(wsUrl()).then((ws) => {
     sockets.push(ws);
-    ws.on('open', () => {
-      ws.off('error', reject);
-      resolve(ws);
-    });
-    ws.on('error', reject);
+    return ws;
   });
 }
 
-function closeSocket(ws: WebSocket): Promise<void> {
-  return new Promise((resolve) => {
-    if (ws.readyState === WebSocket.CLOSED) {
-      resolve();
-      return;
-    }
-
-    ws.once('close', () => resolve());
-    ws.close();
-  });
+function rpcRequest<T>(ws: WebSocket, method: string, params: unknown, timeout?: number): Promise<T> {
+  return rawRpcRequest<T>(ws, method, params, allocateId, timeout);
 }
 
-function createPromptParams(sessionId: string, text: string): SessionPromptParams {
-  return {
-    sessionId,
-    prompt: [{ type: 'text', text }],
-  };
-}
-
-function isResponse(msg: JsonRpcMessage): msg is JsonRpcResponse {
-  return 'result' in msg || 'error' in msg;
-}
-
-function isRequest(msg: JsonRpcMessage): msg is JsonRpcRequest {
-  return 'method' in msg && 'id' in msg;
-}
-
-function isNotification(msg: JsonRpcMessage): msg is JsonRpcNotification {
-  return 'method' in msg && !('id' in msg);
-}
-
-function isSessionUpdateNotification(msg: JsonRpcMessage): msg is JsonRpcNotification {
-  return isNotification(msg) && msg.method === 'session/update';
-}
-
-function getSessionUpdates(messages: JsonRpcMessage[]): SessionUpdate[] {
-  return messages
-    .filter(isSessionUpdateNotification)
-    .map((notif) => (notif.params as { update: SessionUpdate }).update);
-}
-
-function getPromptResponse(
-  messages: JsonRpcMessage[],
-  requestId: number,
-): JsonRpcResponse | undefined {
-  return messages.find((msg): msg is JsonRpcResponse => isResponse(msg) && msg.id === requestId);
-}
-
-function expectStopReason(
-  messages: JsonRpcMessage[],
-  requestId: number,
-  reason: SessionPromptResult['stopReason'],
-): void {
-  const response = getPromptResponse(messages, requestId);
-  expect(response).toBeDefined();
-  expect((response!.result as SessionPromptResult).stopReason).toBe(reason);
-}
-
-function wsSend(ws: WebSocket, payload: object): void {
-  ws.send(JSON.stringify(payload));
-}
-
-function allocateId(): number {
-  return nextJsonRpcId++;
-}
-
-async function rpcRequest<T>(
-  ws: WebSocket,
-  method: string,
-  params: unknown,
-  timeout = REQUEST_TIMEOUT,
-): Promise<T> {
-  const id = allocateId();
-  const message = { jsonrpc: '2.0', id, method, params };
-
-  return new Promise<T>((resolve, reject) => {
-    const handler = (data: WebSocket.Data) => {
-      const msg = JSON.parse(data.toString()) as JsonRpcMessage;
-      if (isResponse(msg) && msg.id === id) {
-        ws.off('message', handler);
-        clearTimeout(timer);
-        if ('error' in msg && msg.error) {
-          reject(new Error(msg.error.message));
-          return;
-        }
-        resolve(msg.result as T);
-      }
-    };
-
-    const timer = setTimeout(() => {
-      ws.off('message', handler);
-      reject(new Error(`Timed out waiting for ${method} response`));
-    }, timeout);
-
-    ws.on('message', handler);
-    wsSend(ws, message);
-  });
-}
-
-function sendNotification(ws: WebSocket, method: string, params: unknown): void {
-  wsSend(ws, { jsonrpc: '2.0', method, params });
-}
-
-function sendPermissionResponse(
-  ws: WebSocket,
-  id: number | string,
-  optionId: 'allow' | 'reject',
-): void {
-  wsSend(ws, {
-    jsonrpc: '2.0',
-    id,
-    result: { outcome: { outcome: 'selected', optionId } },
-  });
-}
-
-function waitForMessage(
-  ws: WebSocket,
-  predicate: (msg: JsonRpcMessage) => boolean,
-  timeout = MESSAGE_TIMEOUT,
-): Promise<JsonRpcMessage> {
-  return new Promise((resolve, reject) => {
-    const handler = (data: WebSocket.Data) => {
-      const msg = JSON.parse(data.toString()) as JsonRpcMessage;
-      if (predicate(msg)) {
-        ws.off('message', handler);
-        clearTimeout(timer);
-        resolve(msg);
-      }
-    };
-
-    const timer = setTimeout(() => {
-      ws.off('message', handler);
-      reject(new Error('Timed out waiting for message'));
-    }, timeout);
-
-    ws.on('message', handler);
-  });
-}
-
-function promptAndCollect(
-  ws: WebSocket,
-  sessionId: string,
-  text: string,
-  timeout = 5_000,
-): { requestId: number; promise: Promise<JsonRpcMessage[]> } {
-  const requestId = allocateId();
-  const payload = {
-    jsonrpc: '2.0',
-    id: requestId,
-    method: 'session/prompt',
-    params: createPromptParams(sessionId, text),
-  };
-  const promise = new Promise<JsonRpcMessage[]>((resolve, reject) => {
-    const messages: JsonRpcMessage[] = [];
-    const handler = (data: WebSocket.Data) => {
-      const msg = JSON.parse(data.toString()) as JsonRpcMessage;
-      messages.push(msg);
-      if (isResponse(msg) && msg.id === requestId) {
-        ws.off('message', handler);
-        clearTimeout(timer);
-        resolve(messages);
-      }
-    };
-    const timer = setTimeout(() => {
-      ws.off('message', handler);
-      reject(new Error(`Timed out after ${timeout}ms collecting messages for request ${requestId}`));
-    }, timeout);
-    ws.on('message', handler);
-    wsSend(ws, payload);
-  });
-  return { requestId, promise };
+function promptAndCollect(ws: WebSocket, sessionId: string, text: string, timeout?: number) {
+  return rawPromptAndCollect(ws, sessionId, text, allocateId, timeout);
 }
 
 async function bootstrapSession(ws: WebSocket): Promise<string> {

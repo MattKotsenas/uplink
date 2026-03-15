@@ -619,8 +619,6 @@ button:disabled {
   overflow: hidden;
 }
 
-.tool-call.pending     { border-left-color: var(--accent); }
-.tool-call.in-progress { border-left-color: var(--accent); }
 .tool-call.completed   { border-left-color: var(--success); }
 .tool-call.failed      { border-left-color: var(--danger); }
 
