@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AcpClient } from '../../src/client/acp-client';
+import { extractModelFromConfigOptions } from '../../src/shared/acp-types';
 
 const flushAsync = () => new Promise(r => setTimeout(r, 0));
 
@@ -45,6 +46,230 @@ describe('AcpClient Bug Fixes', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('configOptions model extraction', () => {
+    it('should call onModelsAvailable from configOptions in session/new response', async () => {
+      const onModelsAvailable = vi.fn();
+      const clientWithModels = new AcpClient({ ...options, onModelsAvailable });
+
+      const sendRequestSpy = vi.spyOn(clientWithModels as any, 'sendRequest');
+      // initialize returns capabilities
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: {} });
+      // session/new returns configOptions with model category
+      sendRequestSpy.mockResolvedValueOnce({
+        sessionId: 'sess-config',
+        configOptions: [{
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'claude-opus-4.6',
+          options: [
+            { value: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+            { value: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+            { value: 'gpt-5.1', name: 'GPT-5.1' },
+          ],
+        }],
+      });
+
+      clientWithModels.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      expect(onModelsAvailable).toHaveBeenCalledWith(
+        [
+          { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          { modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+          { modelId: 'gpt-5.1', name: 'GPT-5.1' },
+        ],
+        'claude-opus-4.6',
+      );
+    });
+
+    it('should prefer configOptions over legacy models field', async () => {
+      const onModelsAvailable = vi.fn();
+      const clientWithModels = new AcpClient({ ...options, onModelsAvailable });
+
+      const sendRequestSpy = vi.spyOn(clientWithModels as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: {} });
+      sendRequestSpy.mockResolvedValueOnce({
+        sessionId: 'sess-both',
+        // Both legacy and new present - configOptions should win
+        models: {
+          currentModelId: 'claude-sonnet-4.6',
+          availableModels: [
+            { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          ],
+        },
+        configOptions: [{
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'claude-opus-4.6',
+          options: [
+            { value: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+          ],
+        }],
+      });
+
+      clientWithModels.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      // Should be called with configOptions data (opus), not legacy (sonnet)
+      expect(onModelsAvailable).toHaveBeenCalledWith(
+        [{ modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6' }],
+        'claude-opus-4.6',
+      );
+    });
+
+    it('should handle config_option_update notification for model change', async () => {
+      const onModelsAvailable = vi.fn();
+      const clientWithModels = new AcpClient({ ...options, onModelsAvailable });
+
+      (clientWithModels as any).sessionId = 'sess-1';
+      (clientWithModels as any).ws = mockWs;
+
+      // Simulate receiving a config_option_update notification
+      (clientWithModels as any).handleNotification({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: 'sess-1',
+          update: {
+            sessionUpdate: 'config_option_update',
+            configOptions: [{
+              type: 'select',
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              currentValue: 'gpt-5.1',
+              options: [
+                { value: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+                { value: 'gpt-5.1', name: 'GPT-5.1' },
+              ],
+            }],
+          },
+        },
+      });
+
+      expect(onModelsAvailable).toHaveBeenCalledWith(
+        [
+          { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          { modelId: 'gpt-5.1', name: 'GPT-5.1' },
+        ],
+        'gpt-5.1',
+      );
+    });
+
+    it('should fall back to legacy models field when no configOptions', async () => {
+      const onModelsAvailable = vi.fn();
+      const clientWithModels = new AcpClient({ ...options, onModelsAvailable });
+
+      const sendRequestSpy = vi.spyOn(clientWithModels as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: {} });
+      sendRequestSpy.mockResolvedValueOnce({
+        sessionId: 'sess-legacy',
+        models: {
+          currentModelId: 'claude-sonnet-4.6',
+          availableModels: [
+            { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          ],
+        },
+      });
+
+      clientWithModels.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      expect(onModelsAvailable).toHaveBeenCalledWith(
+        [{ modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' }],
+        'claude-sonnet-4.6',
+      );
+    });
+  });
+
+  describe('extractModelFromConfigOptions', () => {
+    it('should extract model from configOptions with model category', () => {
+      const result = extractModelFromConfigOptions([{
+        type: 'select',
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        currentValue: 'claude-opus-4.6',
+        options: [
+          { value: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          { value: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+        ],
+      }]);
+
+      expect(result).toEqual({
+        availableModels: [
+          { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          { modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+        ],
+        currentModelId: 'claude-opus-4.6',
+      });
+    });
+
+    it('should return undefined when no model category config option', () => {
+      const result = extractModelFromConfigOptions([{
+        type: 'select',
+        id: 'mode',
+        name: 'Mode',
+        category: 'mode',
+        currentValue: 'agent',
+        options: [{ value: 'agent', name: 'Agent' }],
+      }]);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined for empty configOptions', () => {
+      expect(extractModelFromConfigOptions([])).toBeUndefined();
+      expect(extractModelFromConfigOptions(undefined as any)).toBeUndefined();
+    });
+
+    it('should handle grouped options', () => {
+      const result = extractModelFromConfigOptions([{
+        type: 'select',
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        currentValue: 'claude-opus-4.6',
+        options: [
+          {
+            group: 'anthropic',
+            name: 'Anthropic',
+            options: [
+              { value: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+              { value: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+            ],
+          },
+          {
+            group: 'openai',
+            name: 'OpenAI',
+            options: [
+              { value: 'gpt-5.1', name: 'GPT-5.1' },
+            ],
+          },
+        ],
+      }]);
+
+      expect(result).toEqual({
+        availableModels: [
+          { modelId: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+          { modelId: 'claude-opus-4.6', name: 'Claude Opus 4.6' },
+          { modelId: 'gpt-5.1', name: 'GPT-5.1' },
+        ],
+        currentModelId: 'claude-opus-4.6',
+      });
+    });
   });
 
   describe('Bug 1: Reconnect counter reset', () => {

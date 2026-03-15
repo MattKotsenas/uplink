@@ -412,6 +412,20 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
             { modelId: 'gpt-5.1', name: 'GPT-5.1', description: 'GPT-5.1', _meta: { copilotUsage: '1x', copilotEnablement: 'enabled' } },
           ],
         },
+        configOptions: [{
+          type: 'select' as const,
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'claude-sonnet-4.6',
+          options: [
+            { value: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6', description: 'Claude Sonnet 4.6' },
+            { value: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', description: 'Claude Sonnet 4.5' },
+            { value: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', description: 'Claude Haiku 4.5' },
+            { value: 'claude-opus-4.6', name: 'Claude Opus 4.6', description: 'Claude Opus 4.6' },
+            { value: 'gpt-5.1', name: 'GPT-5.1', description: 'GPT-5.1' },
+          ],
+        }],
         modes: {
           availableModes: [
             { id: 'https://agentclientprotocol.com/protocol/session-modes#agent', name: 'Agent', description: 'Default agent mode for conversational interactions' },
