@@ -79,12 +79,33 @@ export class Conversation {
   }
 
   private notifyScheduled = false;
+  private notifyPaused = false;
+
+  get isNotifyPaused(): boolean {
+    return this.notifyPaused;
+  }
+
+  /** Pause notifications. Updates accumulate silently until resumeNotify(). */
+  pauseNotify(): void {
+    this.notifyPaused = true;
+  }
+
+  /** Resume notifications and fire one immediately to flush accumulated state. */
+  resumeNotify(): void {
+    this.notifyPaused = false;
+    this.notifyScheduled = false;
+    // Fire synchronously so the UI renders the final replay state immediately
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
 
   notify(): void {
-    if (this.notifyScheduled) return;
+    if (this.notifyPaused || this.notifyScheduled) return;
     this.notifyScheduled = true;
     queueMicrotask(() => {
       this.notifyScheduled = false;
+      if (this.notifyPaused) return;
       for (const listener of this.listeners) {
         listener();
       }

@@ -113,6 +113,17 @@ function updateConnectionStatus(state: ConnectionState): void {
   sendBtn.hidden = state === 'prompting';
   cancelBtn.hidden = state !== 'prompting';
 
+  // On reconnect (initializing with existing content), clear conversation
+  // to prevent duplication when replayed session/updates arrive.
+  // Pause rendering so replay builds state silently, then render once at the end.
+  if (state === 'initializing' && conversation.timeline.length > 0) {
+    conversation.clear();
+    conversation.pauseNotify();
+  }
+  if ((state === 'ready' || state === 'prompting') && conversation.isNotifyPaused) {
+    conversation.resumeNotify();
+  }
+
   conversation.isPrompting = state === 'prompting';
   conversation.notify();
 }

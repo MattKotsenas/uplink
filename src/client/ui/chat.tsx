@@ -170,17 +170,13 @@ export function ChatList({
   const showThinking = conversation.isPrompting &&
     (!lastMsg || lastMsg.role === 'user');
 
-  // Auto-scroll when the timeline grows (new messages added).
-  // Uses instant scroll during rapid replay to avoid smooth-scroll animation pileup.
-  const prevTimelineLen = useRef(0);
+  // Auto-scroll only when the user is "following" the conversation (near the bottom).
+  // If they've scrolled up to read, leave them alone.
+  const FOLLOW_THRESHOLD = 50; // px from bottom to count as "following"
   useEffect(() => {
-    const len = conversation.timeline.length + (showThinking ? 1 : 0);
-    if (len !== prevTimelineLen.current) {
-      prevTimelineLen.current = len;
-      const prev = scrollContainer.style.scrollBehavior;
-      scrollContainer.style.scrollBehavior = 'instant';
+    const gap = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    if (gap <= FOLLOW_THRESHOLD) {
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      scrollContainer.style.scrollBehavior = prev;
     }
   });
 
