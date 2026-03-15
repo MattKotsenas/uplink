@@ -238,8 +238,10 @@ export class Conversation {
     const tl = this._timeline.value;
     const idx = tl.findIndex(predicate);
     if (idx >= 0 && idx < tl.length - 1) {
-      const entry = tl[idx];
-      this._timeline.value = [...tl.slice(0, idx), ...tl.slice(idx + 1), entry];
+      const newTl = [...tl];
+      const [entry] = newTl.splice(idx, 1);
+      newTl.push(entry);
+      this._timeline.value = newTl;
     }
   }
 
@@ -250,12 +252,16 @@ export class Conversation {
       const newContent = !last.content.trim()
         ? (last.content + text).trimStart()
         : last.content + text;
-      this._messages.value = [...msgs.slice(0, -1), { ...last, content: newContent }];
-      const msgIndex = this._messages.value.length - 1;
-      this.moveToEnd((e) => e.type === "message" && e.index === msgIndex);
+      batch(() => {
+        this._messages.value = [...msgs.slice(0, -1), { ...last, content: newContent }];
+        const msgIndex = this._messages.value.length - 1;
+        this.moveToEnd((e) => e.type === "message" && e.index === msgIndex);
+      });
     } else if (text.trim()) {
-      this._messages.value = [...msgs, { role: "agent", content: text.trimStart(), timestamp: Date.now() }];
-      this._timeline.value = [...this._timeline.value, { type: "message", index: this._messages.value.length - 1 }];
+      batch(() => {
+        this._messages.value = [...msgs, { role: "agent", content: text.trimStart(), timestamp: Date.now() }];
+        this._timeline.value = [...this._timeline.value, { type: "message", index: this._messages.value.length - 1 }];
+      });
     }
   }
 
@@ -263,12 +269,16 @@ export class Conversation {
     const msgs = this._messages.value;
     const last = msgs[msgs.length - 1];
     if (last?.role === "user") {
-      this._messages.value = [...msgs.slice(0, -1), { ...last, content: last.content + text }];
-      const msgIndex = this._messages.value.length - 1;
-      this.moveToEnd((e) => e.type === "message" && e.index === msgIndex);
+      batch(() => {
+        this._messages.value = [...msgs.slice(0, -1), { ...last, content: last.content + text }];
+        const msgIndex = this._messages.value.length - 1;
+        this.moveToEnd((e) => e.type === "message" && e.index === msgIndex);
+      });
     } else if (text) {
-      this._messages.value = [...msgs, { role: "user", content: text, timestamp: Date.now() }];
-      this._timeline.value = [...this._timeline.value, { type: "message", index: this._messages.value.length - 1 }];
+      batch(() => {
+        this._messages.value = [...msgs, { role: "user", content: text, timestamp: Date.now() }];
+        this._timeline.value = [...this._timeline.value, { type: "message", index: this._messages.value.length - 1 }];
+      });
     }
   }
 
