@@ -79,33 +79,12 @@ export class Conversation {
   }
 
   private notifyScheduled = false;
-  private notifyPaused = false;
-
-  get isNotifyPaused(): boolean {
-    return this.notifyPaused;
-  }
-
-  /** Pause notifications. Updates accumulate silently until resumeNotify(). */
-  pauseNotify(): void {
-    this.notifyPaused = true;
-  }
-
-  /** Resume notifications and fire one immediately to flush accumulated state. */
-  resumeNotify(): void {
-    this.notifyPaused = false;
-    this.notifyScheduled = false;
-    // Fire synchronously so the UI renders the final replay state immediately
-    for (const listener of this.listeners) {
-      listener();
-    }
-  }
 
   notify(): void {
-    if (this.notifyPaused || this.notifyScheduled) return;
+    if (this.notifyScheduled) return;
     this.notifyScheduled = true;
     queueMicrotask(() => {
       this.notifyScheduled = false;
-      if (this.notifyPaused) return;
       for (const listener of this.listeners) {
         listener();
       }
@@ -260,6 +239,19 @@ export class Conversation {
     this.nextThinkingId = 0;
     this.activeThinkingId = null;
     this.notify();
+  }
+
+  /** Reset state without notifying listeners (used before replay to avoid flash). */
+  clearSilently(): void {
+    this.messages = [];
+    this.toolCalls.clear();
+    this.permissions = [];
+    this.shellResults.clear();
+    this.plan = null;
+    this.timeline = [];
+    this.nextShellId = 0;
+    this.nextThinkingId = 0;
+    this.activeThinkingId = null;
   }
 
   // ─── Private helpers ──────────────────────────────────────────────
