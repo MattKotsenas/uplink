@@ -1,12 +1,14 @@
 import {
   createNotification,
   createRequest,
+  extractModelFromConfigOptions,
   parseMessage,
 } from "../shared/acp-types";
 import type {
   AgentCapabilities,
   AvailableModel,
   ClientCapabilities,
+  ConfigOptionUpdateSessionUpdate,
   InitializeResult,
   JsonRpcMessage,
   JsonRpcNotification,
@@ -132,10 +134,7 @@ export class AcpClient {
     );
     this.sessionId = result.sessionId;
     localStorage.setItem('uplink-resume-session', result.sessionId);
-    if (result.models?.availableModels) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
-      this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
-    }
+    this.emitModelsFromResult(result);
   }
 
   async prompt(text: string): Promise<StopReason> {
@@ -304,9 +303,9 @@ export class AcpClient {
         if ((loadResult as Record<string, unknown>).promptInProgress) {
           this.promptInProgressOnReconnect = true;
         }
-        if (loadResult.models?.availableModels) {
-          localStorage.setItem('uplink-cached-models', JSON.stringify(loadResult.models));
-          this.options.onModelsAvailable?.(loadResult.models.availableModels, loadResult.models.currentModelId);
+        const hasModels = extractModelFromConfigOptions(loadResult.configOptions) || loadResult.models?.availableModels;
+        if (hasModels) {
+          this.emitModelsFromResult(loadResult);
         } else {
           this.restoreCachedModels();
         }
@@ -328,10 +327,7 @@ export class AcpClient {
     this.sessionId = result.sessionId;
     localStorage.setItem('uplink-resume-session', result.sessionId);
 
-    if (result.models?.availableModels) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
-      this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
-    }
+    this.emitModelsFromResult(result);
   }
 
   private restoreCachedModels(): void {
@@ -437,6 +433,16 @@ export class AcpClient {
     }
 
     const params = message.params as SessionUpdateParams;
+
+    // Handle config_option_update to track model changes
+    if (params.update?.sessionUpdate === 'config_option_update') {
+      const configUpdate = params.update as ConfigOptionUpdateSessionUpdate;
+      const modelInfo = extractModelFromConfigOptions(configUpdate.configOptions);
+      if (modelInfo) {
+        this.options.onModelsAvailable?.(modelInfo.availableModels, modelInfo.currentModelId);
+      }
+    }
+
     try {
       this.options.onSessionUpdate?.(params.update);
     } catch (err) {
@@ -629,5 +635,20 @@ export class AcpClient {
 
   private isSocketOpen(): boolean {
     return !!this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /** Extract model info from a session result, preferring configOptions over legacy models. */
+  private emitModelsFromResult(result: SessionNewResult): void {
+    const fromConfig = extractModelFromConfigOptions(result.configOptions);
+    if (fromConfig) {
+      localStorage.setItem('uplink-cached-models', JSON.stringify({
+        availableModels: fromConfig.availableModels,
+        currentModelId: fromConfig.currentModelId,
+      }));
+      this.options.onModelsAvailable?.(fromConfig.availableModels, fromConfig.currentModelId);
+    } else if (result.models?.availableModels) {
+      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
+      this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
+    }
   }
 }

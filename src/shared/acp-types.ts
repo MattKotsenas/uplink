@@ -112,6 +112,8 @@ export interface SessionNewResult {
     availableModels: AvailableModel[];
     currentModelId?: string;
   };
+  /** ACP standard config options (includes model selector). */
+  configOptions?: SessionConfigOption[];
   /** Available interaction modes (agent, plan, autopilot). */
   modes?: {
     availableModes: { id: string; name: string; description: string }[];
@@ -125,6 +127,72 @@ export interface AvailableModel {
   name: string;
   description?: string;
   _meta?: { copilotUsage?: string; copilotEnablement?: string };
+}
+
+// ─── Session Config Options (ACP standard) ────────────────────────────
+
+/** A single selectable value within a config option. */
+export interface SessionConfigSelectOption {
+  value: string;
+  name: string;
+  description?: string;
+  _meta?: Record<string, unknown>;
+}
+
+/** A group of selectable values. */
+export interface SessionConfigSelectGroup {
+  group: string;
+  name: string;
+  options: SessionConfigSelectOption[];
+  _meta?: Record<string, unknown>;
+}
+
+/** A session config option (single-value selector). */
+export interface SessionConfigOption {
+  type: 'select';
+  id: string;
+  name: string;
+  category?: 'model' | 'mode' | 'thought_level' | 'other' | string;
+  description?: string;
+  currentValue: string;
+  options: Array<SessionConfigSelectOption | SessionConfigSelectGroup>;
+  _meta?: Record<string, unknown>;
+}
+
+/** Config option update session notification. */
+export interface ConfigOptionUpdateSessionUpdate {
+  sessionUpdate: 'config_option_update';
+  configOptions: SessionConfigOption[];
+}
+
+/**
+ * Extract model info from ACP configOptions.
+ * Finds the config option with `category: 'model'` and converts to the
+ * AvailableModel format used internally.
+ */
+export function extractModelFromConfigOptions(
+  configOptions: SessionConfigOption[] | undefined,
+): { availableModels: AvailableModel[]; currentModelId: string } | undefined {
+  if (!configOptions?.length) return undefined;
+
+  const modelOption = configOptions.find((o) => o.category === 'model');
+  if (!modelOption) return undefined;
+
+  const availableModels: AvailableModel[] = [];
+  for (const opt of modelOption.options) {
+    if ('group' in opt && 'options' in opt) {
+      // Grouped options
+      for (const sub of (opt as SessionConfigSelectGroup).options) {
+        availableModels.push({ modelId: sub.value, name: sub.name, description: sub.description });
+      }
+    } else {
+      // Flat option
+      const flat = opt as SessionConfigSelectOption;
+      availableModels.push({ modelId: flat.value, name: flat.name, description: flat.description });
+    }
+  }
+
+  return { availableModels, currentModelId: modelOption.currentValue };
 }
 
 // ─── session/load ─────────────────────────────────────────────────────
@@ -331,7 +399,8 @@ export type SessionUpdate =
   | UserMessageChunkUpdate
   | ToolCallSessionUpdate
   | ToolCallUpdateSessionUpdate
-  | PlanSessionUpdate;
+  | PlanSessionUpdate
+  | ConfigOptionUpdateSessionUpdate;
 
 /** Params for the `session/update` notification. */
 export interface SessionUpdateParams {

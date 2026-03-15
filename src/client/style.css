@@ -419,6 +419,9 @@ pre code {
   line-height: 1;
   pointer-events: none;
   white-space: nowrap;
+  max-width: 25ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #model-label:empty {
