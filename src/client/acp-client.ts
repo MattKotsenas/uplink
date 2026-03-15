@@ -4,6 +4,7 @@ import {
   extractModelFromConfigOptions,
   parseMessage,
 } from "../shared/acp-types";
+import { DebugLog } from "../shared/debug-log.js";
 import { StorageKeys } from "./storage-keys.js";
 import type {
   AgentCapabilities,
@@ -26,7 +27,6 @@ import type {
   SessionUpdateParams,
   StopReason,
 } from "../shared/acp-types";
-import { StorageKeys } from "./storage-keys.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const BASE_BACKOFF_MS = 1_000;
@@ -38,6 +38,9 @@ const CLIENT_INFO = {
   title: "Copilot Uplink",
   version: "0.1.0",
 } as const;
+
+/** Client-side debug log singleton. */
+export const debugLog = new DebugLog();
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -88,7 +91,6 @@ export type {
   StopReason,
   SessionRequestPermissionParams as PermissionRequestParams,
 } from "../shared/acp-types";
-import { StorageKeys } from "./storage-keys.js";
 
 export class AcpClient {
   private state: ConnectionState = "disconnected";
@@ -307,6 +309,11 @@ export class AcpClient {
     const resumeId = this.storage.getItem(StorageKeys.RESUME_SESSION);
     if (resumeId && this.agentCapabilities.loadSession) {
       const isSameSession = resumeId === this.previousSessionId;
+      debugLog.append('conn', 'session_resume', {
+        resumeId,
+        previousSessionId: this.previousSessionId,
+        isSameSession,
+      });
       try {
         // If reconnecting to the same session, tell the server to skip
         // replaying history - the client already has the conversation.
@@ -323,8 +330,14 @@ export class AcpClient {
 
         const tLoad = performance.now();
         const loadResult = await this.sendRequest<SessionNewResult>("session/load", loadParams);
-        console.debug(`[timing] session/load: ${(performance.now() - tLoad).toFixed(0)}ms`);
+        const loadMs = performance.now() - tLoad;
+        console.debug(`[timing] session/load: ${loadMs.toFixed(0)}ms`);
         console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
+        debugLog.append('conn', 'session_loaded', {
+          sessionId: loadResult.sessionId ?? resumeId,
+          loadMs: Math.round(loadMs),
+          promptInProgress: !!(loadResult as Record<string, unknown>).promptInProgress,
+        });
         this.sessionId = loadResult.sessionId ?? resumeId;
         if ((loadResult as Record<string, unknown>).promptInProgress) {
           this.promptInProgressOnReconnect = true;
@@ -339,6 +352,7 @@ export class AcpClient {
       } catch (err) {
         // session/load failed — clear stale key and fall through to new session
         console.debug('[resume] session/load failed:', err);
+        debugLog.append('conn', 'session_resume_failed', { resumeId, error: String(err) });
         this.storage.removeItem(StorageKeys.RESUME_SESSION);
       }
     }
@@ -350,8 +364,13 @@ export class AcpClient {
       "session/new",
       { cwd: this.options.cwd, mcpServers: [] },
     );
-    console.debug(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
+    const newMs = performance.now() - tNew;
+    console.debug(`[timing] session/new: ${newMs.toFixed(0)}ms`);
     console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
+    debugLog.append('conn', 'session_new', {
+      sessionId: result.sessionId,
+      newMs: Math.round(newMs),
+    });
     this.sessionId = result.sessionId;
     this.storage.setItem(StorageKeys.RESUME_SESSION, result.sessionId);
 
@@ -385,6 +404,7 @@ export class AcpClient {
     this.previousSessionId = this.sessionId;
     this.ws = undefined;
     this.sessionId = undefined;
+    debugLog.append('conn', 'ws_close', { previousSessionId: this.previousSessionId });
     this.rejectAllPendingRequests(new Error("Connection closed"));
     this.setState("disconnected");
 
@@ -403,6 +423,7 @@ export class AcpClient {
       MAX_BACKOFF_MS,
     );
     this.reconnectAttempts += 1;
+    debugLog.append('conn', 'reconnect_schedule', { attempt: this.reconnectAttempts, delayMs: delay });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.establishConnection().catch(() => {
@@ -433,11 +454,24 @@ export class AcpClient {
     }
 
     if ("result" in message || "error" in message) {
-      this.handleResponse(message as JsonRpcResponse);
+      const resp = message as JsonRpcResponse;
+      debugLog.append('proto', 'ws_recv_response', {
+        id: resp.id,
+        error: "error" in resp ? (resp.error as { message?: string })?.message : undefined,
+      });
+      this.handleResponse(resp);
     } else if ("id" in message) {
-      this.handleRequest(message as JsonRpcRequest);
+      const req = message as JsonRpcRequest;
+      debugLog.append('proto', 'ws_recv_request', { id: req.id, method: req.method });
+      this.handleRequest(req);
     } else {
-      this.handleNotification(message as JsonRpcNotification);
+      const notif = message as JsonRpcNotification;
+      const params = notif.params as SessionUpdateParams | undefined;
+      debugLog.append('proto', 'ws_recv_notification', {
+        method: notif.method,
+        updateType: params?.update?.sessionUpdate,
+      });
+      this.handleNotification(notif);
     }
   }
 
@@ -589,6 +623,7 @@ export class AcpClient {
     }
 
     const id = this.nextRequestId++;
+    debugLog.append('proto', 'ws_send', { id, method });
     const request = createRequest(id, method, params);
 
     const effectiveTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
@@ -649,7 +684,9 @@ export class AcpClient {
       return;
     }
 
+    const prev = this.state;
     this.state = state;
+    debugLog.append('conn', 'state_change', { from: prev, to: state });
     try {
       this.options.onStateChange?.(state);
     } catch (err) {

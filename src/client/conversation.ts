@@ -8,6 +8,7 @@ import type {
   PlanEntry,
 } from "../shared/acp-types";
 import { signal, batch, type ReadonlySignal } from "@preact/signals";
+import { debugLog } from "./acp-client.js";
 
 // ─── Data Models ──────────────────────────────────────────────────────
 
@@ -105,6 +106,11 @@ export class Conversation {
   // ─── Session update routing ───────────────────────────────────────
 
   handleSessionUpdate(update: SessionUpdate): void {
+    debugLog.append('ui', 'session_update', {
+      type: update.sessionUpdate,
+      toolCallId: (update as { toolCallId?: string }).toolCallId,
+      status: (update as { status?: string }).status,
+    });
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
         this.completeThinking();
@@ -218,6 +224,11 @@ export class Conversation {
   // ─── Reset ────────────────────────────────────────────────────────
 
   clear(): void {
+    debugLog.append('ui', 'conversation_clear', {
+      messageCount: this._messages.value.length,
+      toolCallCount: this._toolCalls.value.size,
+      timelineLength: this._timeline.value.length,
+    });
     batch(() => {
       this._messages.value = [];
       this._toolCalls.value = new Map();
