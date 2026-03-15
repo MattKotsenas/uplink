@@ -420,8 +420,8 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
   // Wait for the response to complete — permission should be auto-approved
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // The permission card should show "Approved" (auto-approved, not pending)
-  const approved = page.locator('.permission-request').filter({ hasText: 'Approved' });
+  // The permission card should be resolved with approved status (green border)
+  const approved = page.locator('.permission-request.approved');
   await expect(approved).toHaveCount(1, { timeout: 5000 });
 
   // No pending permission buttons should be visible
