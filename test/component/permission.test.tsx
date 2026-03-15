@@ -1,9 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/preact';
-import { h } from 'preact';
+import { cleanup } from '@testing-library/preact';
 import { Conversation } from '../../src/client/conversation.js';
 import {
-  PermissionCard,
   showPermissionRequest,
   cancelAllPermissions,
   activeRequests,
@@ -21,13 +19,7 @@ function makeOptions(): PermissionOption[] {
   ];
 }
 
-/** Helper: create a request via showPermissionRequest and return the ActiveRequest from the signal. */
-function setupRequest(conversation: Conversation, id: number, title: string, respond: (o: PermissionOutcome) => void = () => {}) {
-  showPermissionRequest(conversation, id, `tc-${id}`, title, makeOptions(), respond);
-  return activeRequests.value.find(r => r.requestId === id)!;
-}
-
-describe('PermissionCard', () => {
+describe('Permission request management', () => {
   let conversation: Conversation;
 
   beforeEach(() => {
@@ -35,55 +27,25 @@ describe('PermissionCard', () => {
     cancelAllPermissions(conversation);
   });
 
-  it('renders title and options', () => {
-    const req = setupRequest(conversation, 1, 'Edit file.ts');
-    render(<PermissionCard req={req} conversation={conversation} />);
-
-    expect(screen.getByText('Edit file.ts')).toBeTruthy();
-    expect(screen.getByText('Allow once')).toBeTruthy();
-    expect(screen.getByText('Deny')).toBeTruthy();
-    expect(screen.getByText('Copilot wants to perform this action. Allow?')).toBeTruthy();
+  it('showPermissionRequest adds to activeRequests with toolCallId', () => {
+    showPermissionRequest(conversation, 1, 'tc-1', 'Edit file.ts', makeOptions(), () => {});
+    expect(activeRequests.value).toHaveLength(1);
+    expect(activeRequests.value[0].toolCallId).toBe('tc-1');
+    expect(activeRequests.value[0].title).toBe('Edit file.ts');
   });
 
-  it('calls respond with selected option on click', () => {
+  it('auto-approve resolves immediately and calls respond', () => {
     let received: PermissionOutcome | undefined;
-    const req = setupRequest(conversation, 2, 'Run command', (o) => { received = o; });
-    render(<PermissionCard req={req} conversation={conversation} />);
-
-    fireEvent.click(screen.getByText('Allow once'));
+    showPermissionRequest(conversation, 2, 'tc-2', 'Run cmd', makeOptions(), (o) => { received = o; }, 'allow-once');
     expect(received).toEqual({ outcome: 'selected', optionId: 'allow-once' });
-  });
-
-  it('collapses to summary after selection', () => {
-    const req = setupRequest(conversation, 3, 'Delete file');
-    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
-
-    fireEvent.click(screen.getByText('Allow once'));
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(container.querySelector('.permission-request.approved')).toBeTruthy();
-  });
-
-  it('shows approved border after allowing', () => {
-    const req = setupRequest(conversation, 4, 'Write file');
-    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
-
-    fireEvent.click(screen.getByText('Allow once'));
-    expect(container.querySelector('.permission-request.approved')).toBeTruthy();
-  });
-
-  it('shows denied border after rejecting', () => {
-    const req = setupRequest(conversation, 5, 'Execute cmd');
-    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
-
-    fireEvent.click(screen.getByText('Deny'));
-    expect(container.querySelector('.permission-request.denied')).toBeTruthy();
+    expect(activeRequests.value[0].resolved.value).toBe(true);
   });
 
   it('cancelAll sends cancelled outcome and clears active requests', () => {
     const outcomes: PermissionOutcome[] = [];
     const respond = (o: PermissionOutcome) => { outcomes.push(o); };
-    setupRequest(conversation, 6, 'Action A', respond);
-    setupRequest(conversation, 7, 'Action B', respond);
+    showPermissionRequest(conversation, 6, 'tc-6', 'Action A', makeOptions(), respond);
+    showPermissionRequest(conversation, 7, 'tc-7', 'Action B', makeOptions(), respond);
 
     expect(activeRequests.value.length).toBe(2);
 

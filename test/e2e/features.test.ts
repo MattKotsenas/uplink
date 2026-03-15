@@ -358,24 +358,24 @@ test('permission prompt appears inside the chat flow, not below it', async ({ pa
   await input.fill('permission allow');
   await page.locator('#send-btn').click();
 
-  // Wait for the permission prompt
-  const permissionCard = page.locator('.permission-request').first();
-  await expect(permissionCard).toBeVisible({ timeout: 10000 });
+  // Wait for the permission UI - now rendered inline in the tool call card
+  const permToolCall = page.locator('.tool-call.awaiting-permission').first();
+  await expect(permToolCall).toBeVisible({ timeout: 10000 });
 
-  // The permission should be inside .chat-container (same flex container as messages)
-  const isInsideChatContainer = await permissionCard.evaluate((el) => {
+  // The tool call with permission should be inside .chat-container
+  const isInsideChatContainer = await permToolCall.evaluate((el) => {
     return el.closest('.chat-container') !== null;
   });
   expect(isInsideChatContainer).toBe(true);
 
-  // The permission card should appear after the user message in DOM order
+  // The permission UI should appear after the user message in DOM order
   const userMessage = page.locator('.message.user').first();
   const userMessageRect = await userMessage.boundingBox();
-  const permissionRect = await permissionCard.boundingBox();
+  const permissionRect = await permToolCall.boundingBox();
   expect(permissionRect!.y).toBeGreaterThan(userMessageRect!.y);
 
-  // Permission icon should use Material Symbols
-  const permIcon = permissionCard.locator('.material-symbols-outlined').first();
+  // Permission icon (lock) should use Material Symbols
+  const permIcon = permToolCall.locator('.material-symbols-outlined').first();
   await expect(permIcon).toBeVisible();
 });
 
@@ -420,9 +420,10 @@ test('yolo mode auto-approves permission requests', async ({ page }) => {
   // Wait for the response to complete — permission should be auto-approved
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // The permission card should be resolved with approved status (green border)
-  const approved = page.locator('.permission-request.approved');
-  await expect(approved).toHaveCount(1, { timeout: 5000 });
+  // In yolo mode, the tool call should complete normally (no awaiting-permission state)
+  // The tool call card should exist but not be in awaiting-permission state
+  const awaitingPerm = page.locator('.tool-call.awaiting-permission');
+  await expect(awaitingPerm).toHaveCount(0);
 
   // No pending permission buttons should be visible
   const pendingAllowBtn = page.locator('.permission-btn.allow:not([disabled])');
@@ -545,22 +546,26 @@ test('tool call and permission icons have consistent left alignment', async ({ p
   await page.locator('#send-btn').click();
   await expect(page.locator('.tool-call').first()).toBeVisible({ timeout: 10000 });
 
-  // Trigger permission
+  // Trigger permission (renders inline in the tool call card)
   await page.locator('#prompt-input').fill('permission allow');
   await page.locator('#send-btn').click();
-  await expect(page.locator('.permission-request').first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.tool-call.awaiting-permission').first()).toBeVisible({ timeout: 10000 });
 
-  // Measure icon left edges relative to their card container
-  const toolIconX = await page.locator('.tool-call .kind-icon').first().boundingBox();
-  const toolCardX = await page.locator('.tool-call').first().boundingBox();
-  const permIconX = await page.locator('.permission-request .permission-icon').first().boundingBox();
-  const permCardX = await page.locator('.permission-request').first().boundingBox();
+  // Both tool calls should have icons at the same offset from their card edge
+  const toolCards = page.locator('.tool-call');
+  const count = await toolCards.count();
+  expect(count).toBeGreaterThanOrEqual(2);
 
-  const toolOffset = toolIconX!.x - toolCardX!.x;
-  const permOffset = permIconX!.x - permCardX!.x;
+  const firstIconX = await toolCards.nth(0).locator('.kind-icon').first().boundingBox();
+  const firstCardX = await toolCards.nth(0).boundingBox();
+  const secondIconX = await toolCards.nth(count - 1).locator('.kind-icon').first().boundingBox();
+  const secondCardX = await toolCards.nth(count - 1).boundingBox();
+
+  const firstOffset = firstIconX!.x - firstCardX!.x;
+  const secondOffset = secondIconX!.x - secondCardX!.x;
 
   // Icons should start at the same offset from their card's left edge
-  expect(toolOffset).toBeCloseTo(permOffset, 0);
+  expect(firstOffset).toBeCloseTo(secondOffset, 0);
 });
 
 test('failed tool call shows status message when expanded', async ({ page }) => {

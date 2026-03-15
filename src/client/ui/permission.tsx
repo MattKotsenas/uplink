@@ -1,11 +1,9 @@
-import { h } from 'preact';
 import { signal, type Signal } from '@preact/signals';
 import { Conversation } from '../conversation.js';
 import type {
   PermissionOption,
   PermissionOutcome,
 } from '../../shared/acp-types.js';
-import { Icon } from './icon.js';
 
 export type PermissionResponder = (outcome: PermissionOutcome) => void;
 
@@ -69,80 +67,5 @@ export function cancelAllPermissions(conversation: Conversation): void {
 function removeRequest(requestId: number): void {
   activeRequests.value = activeRequests.value.filter(
     (r) => r.requestId !== requestId,
-  );
-}
-
-function resolveRequest(
-  conversation: Conversation,
-  req: ActiveRequest,
-  optionId: string,
-): void {
-  if (req.resolved.peek()) return;
-  req.respond({ outcome: 'selected', optionId });
-  conversation.resolvePermission(req.requestId, optionId);
-  req.resolved.value = true;
-  req.selectedOptionId.value = optionId;
-}
-
-// ─── Components ───────────────────────────────────────────────────────
-
-export function PermissionCard({
-  req,
-  conversation,
-}: {
-  req: ActiveRequest;
-  conversation: Conversation;
-}) {
-  const resolved = req.resolved.value;
-  const selectedOption = req.options.find(
-    (o) => o.optionId === req.selectedOptionId.value,
-  );
-  const wasApproved = selectedOption?.kind.startsWith('allow');
-
-  if (resolved) {
-    return (
-      <div class={`permission-request resolved ${wasApproved ? 'approved' : 'denied'}`}>
-        <div class="permission-header">
-          <Icon name={wasApproved ? 'check_circle' : 'cancel'} class="permission-icon" />
-          <span class="permission-title">{req.title}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div class={`permission-request${resolved ? ' resolved' : ''}`}>
-      <div class="permission-header">
-        <Icon name="lock" class="permission-icon" />
-        <span class="permission-title">{req.title}</span>
-      </div>
-      <div class="permission-message">
-        Copilot wants to perform this action. Allow?
-      </div>
-      <div class="permission-actions">
-        {req.options.map((option) => {
-          const isAllow = option.kind.startsWith('allow');
-          const isSelected = req.selectedOptionId.value === option.optionId;
-          const label =
-            resolved && isSelected
-              ? isAllow
-                ? 'Approved'
-                : 'Denied'
-              : option.name;
-
-          return (
-            <button
-              key={option.optionId}
-              type="button"
-              class={`permission-btn ${isAllow ? 'allow' : 'reject'}`}
-              disabled={resolved}
-              onClick={() => resolveRequest(conversation, req, option.optionId)}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
