@@ -74,6 +74,80 @@ describe('Conversation', () => {
       expect(conversation.messages.value[1].content).toBe('User reply');
       expect(conversation.messages.value[2].content).toBe('Second');
     });
+
+    it('Agent text after a tool call starts a new bubble instead of appending', () => {
+      // Agent says something
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Let me check that.' }
+      });
+
+      // Tool call happens
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-1',
+        title: 'Read file',
+        kind: 'read',
+        status: 'completed',
+        content: [],
+        locations: [],
+      });
+
+      // Agent says more - should be a NEW bubble, not appended to "Let me check that."
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'The file contains 42 lines.' }
+      });
+
+      expect(conversation.messages.value).toHaveLength(2);
+      expect(conversation.messages.value[0].content).toBe('Let me check that.');
+      expect(conversation.messages.value[1].content).toBe('The file contains 42 lines.');
+
+      // Timeline should have: message, toolCall, message (in order)
+      const tl = conversation.timeline.value;
+      expect(tl[tl.length - 1].type).toBe('message');
+      expect(tl[tl.length - 2].type).toBe('toolCall');
+    });
+
+    it('Agent text appends when the agent message is still the last timeline entry', () => {
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Part one' }
+      });
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: ' part two' }
+      });
+
+      // Should still be one message
+      expect(conversation.messages.value).toHaveLength(1);
+      expect(conversation.messages.value[0].content).toBe('Part one part two');
+    });
+
+    it('User text after a tool call starts a new bubble instead of appending', () => {
+      conversation.addUserMessage('First user message');
+
+      // Tool call happens
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-1',
+        title: 'Read file',
+        kind: 'read',
+        status: 'completed',
+        content: [],
+        locations: [],
+      });
+
+      // Another user message chunk - should be a new bubble
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: 'Second user message' }
+      });
+
+      expect(conversation.messages.value).toHaveLength(2);
+      expect(conversation.messages.value[0].content).toBe('First user message');
+      expect(conversation.messages.value[1].content).toBe('Second user message');
+    });
   });
 
   describe('Tool call lifecycle', () => {
