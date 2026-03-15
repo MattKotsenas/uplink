@@ -204,6 +204,28 @@ export function startServer(options: ServerOptions): ServerResult {
     bridgeCommand = options.copilotCommand ?? 'copilot';
     bridgeArgs = options.copilotArgs ?? ['--acp', '--stdio'];
   }
+
+  // Inject custom MCP servers into the CLI via --additional-mcp-config.
+  // The ACP spec says mcpServers in session/new should work, but the
+  // Copilot CLI ignores that field. This flag is the working alternative.
+  const askUserScript = path.resolve(resolvedCwd, 'src/mcp/ask-user-server.ts');
+  if (existsSync(askUserScript)) {
+    const askUserDir = path.join(resolvedCwd, '.uplink-ask-user');
+    const mcpConfig = JSON.stringify({
+      mcpServers: {
+        'uplink-tools': {
+          type: 'local',
+          command: 'npx',
+          args: ['tsx', askUserScript],
+          tools: ['*'],
+          env: { ASK_USER_DIR: askUserDir },
+        },
+      },
+    });
+    bridgeArgs = [...bridgeArgs, '--additional-mcp-config', mcpConfig];
+    log.server('injecting uplink-tools MCP server via --additional-mcp-config');
+  }
+
   const bridgeEnvObj: Record<string, string | undefined> = {};
   const skillsDirs = process.env.COPILOT_SKILLS_DIRS ?? discoverPluginSkillsDirs();
   if (skillsDirs) {
