@@ -5,7 +5,8 @@ import { AcpClient, type ConnectionState } from './acp-client.js';
 import { Conversation } from './conversation.js';
 import { ChatList } from './ui/chat.js';
 import { showPermissionRequest, cancelAllPermissions } from './ui/permission.js';
-import { SessionsModal } from './ui/sessions.js';
+import { SessionsModal, openSessionsModal } from './ui/sessions.js';
+import { fetchSessions as fetchSessionsApi } from './ui/sessions-api.js';
 import { CommandPalette, type PaletteItem } from './ui/command-palette.js';
 import { getCompletions, setAvailableModels } from './slash-commands.js';
 import { handleSend, type AgentMode } from './prompt-controller.js';
@@ -113,6 +114,9 @@ export function App() {
         modelLabelHidden.value = false;
       },
       applyTheme,
+      cancelPermissions: (conv) => cancelAllPermissions(conv),
+      fetchSessions: (cwd) => fetchSessionsApi(cwd),
+      showSessionsModal: openSessionsModal,
     });
   }
 

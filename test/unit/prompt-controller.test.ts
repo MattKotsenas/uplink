@@ -1,14 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-// Mock UI boundary modules that aren't injectable via deps (Phase 2 fix planned)
-vi.mock('../../src/client/ui/permission.js', () => ({
-  cancelAllPermissions: vi.fn(),
-}));
-vi.mock('../../src/client/ui/sessions.js', () => ({
-  fetchSessions: vi.fn(),
-  openSessionsModal: vi.fn(),
-}));
-
 import {
   handleSend,
   handleClientCommand,
@@ -58,6 +49,9 @@ function createMockDeps(overrides: Partial<{
     setYoloMode: vi.fn((on: boolean) => { yolo = on; }),
     setModelLabel: vi.fn(),
     applyTheme: vi.fn(),
+    cancelPermissions: vi.fn(),
+    fetchSessions: vi.fn().mockResolvedValue([]),
+    showSessionsModal: vi.fn(),
   } as PromptControllerDeps & { client: MockClient };
 }
 

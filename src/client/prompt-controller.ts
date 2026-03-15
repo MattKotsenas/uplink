@@ -1,7 +1,6 @@
 import type { AcpClient } from './acp-client.js';
 import type { Conversation } from './conversation.js';
-import { cancelAllPermissions } from './ui/permission.js';
-import { fetchSessions, openSessionsModal } from './ui/sessions.js';
+import type { SessionInfo } from '../shared/acp-types.js';
 import { parseSlashCommand, findModelName } from './slash-commands.js';
 
 // --- Types -----------------------------------------------------------------
@@ -18,13 +17,21 @@ export interface PromptControllerDeps {
   setYoloMode: (on: boolean) => void;
   setModelLabel: (name: string) => void;
   applyTheme: (theme: string) => void;
+  cancelPermissions: (conversation: Conversation) => void;
+  fetchSessions: (cwd: string) => Promise<SessionInfo[]>;
+  showSessionsModal: (
+    sessions: SessionInfo[],
+    supportsResume: boolean,
+    onResume: (sessionId: string) => Promise<void>,
+    onNew: () => Promise<void>,
+  ) => void;
 }
 
 // --- Helpers ---------------------------------------------------------------
 
-function clearConversation(conversation: Conversation): void {
-  conversation.clear();
-  cancelAllPermissions(conversation);
+function clearConversation(deps: PromptControllerDeps): void {
+  deps.conversation.clear();
+  deps.cancelPermissions(deps.conversation);
 }
 
 // --- Prompt Flow -----------------------------------------------------------
@@ -138,7 +145,7 @@ export function handleClientCommand(command: string, arg: string, deps: PromptCo
 
 export async function handleClearCommand(deps: PromptControllerDeps): Promise<void> {
   const { client, conversation } = deps;
-  clearConversation(conversation);
+  clearConversation(deps);
   // Clear server-side replay buffer
   if (client.currentSessionId) {
     client.sendRawRequest('uplink/clear_history', { sessionId: client.currentSessionId }).catch(() => {});
@@ -155,7 +162,7 @@ export async function handleSessionCommand(arg: string, deps: PromptControllerDe
   const { client, conversation, clientCwd } = deps;
 
   if (arg === 'create' || arg === 'new') {
-    clearConversation(conversation);
+    clearConversation(deps);
     try {
       await client.newSession();
     } catch (err) {
@@ -181,12 +188,12 @@ export async function handleSessionCommand(arg: string, deps: PromptControllerDe
   }
 
   if (arg === 'list' || arg === '') {
-    const sessions = await fetchSessions(clientCwd);
-    openSessionsModal(
+    const sessions = await deps.fetchSessions(clientCwd);
+    deps.showSessionsModal(
       sessions,
       client.supportsLoadSession,
       async (sessionId) => {
-        clearConversation(conversation);
+        clearConversation(deps);
         try {
           await client.loadSession(sessionId);
         } catch (err) {
@@ -194,7 +201,7 @@ export async function handleSessionCommand(arg: string, deps: PromptControllerDe
         }
       },
       async () => {
-        clearConversation(conversation);
+        clearConversation(deps);
         try {
           await client.newSession();
         } catch (err) {
