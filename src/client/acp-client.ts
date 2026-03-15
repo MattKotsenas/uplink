@@ -4,6 +4,7 @@ import {
   extractModelFromConfigOptions,
   parseMessage,
 } from "../shared/acp-types";
+import { StorageKeys } from "./storage-keys.js";
 import type {
   AgentCapabilities,
   AvailableModel,
@@ -25,6 +26,7 @@ import type {
   SessionUpdateParams,
   StopReason,
 } from "../shared/acp-types";
+import { StorageKeys } from "./storage-keys.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const BASE_BACKOFF_MS = 1_000;
@@ -84,6 +86,7 @@ export type {
   StopReason,
   SessionRequestPermissionParams as PermissionRequestParams,
 } from "../shared/acp-types";
+import { StorageKeys } from "./storage-keys.js";
 
 export class AcpClient {
   private state: ConnectionState = "disconnected";
@@ -133,7 +136,7 @@ export class AcpClient {
       mcpServers: [],
     } satisfies SessionLoadParams);
     this.sessionId = sessionId;
-    this.storage.setItem('uplink-resume-session', sessionId);
+    this.storage.setItem(StorageKeys.RESUME_SESSION, sessionId);
   }
 
   async newSession(): Promise<void> {
@@ -143,7 +146,7 @@ export class AcpClient {
       { cwd: this.options.cwd, mcpServers: [] },
     );
     this.sessionId = result.sessionId;
-    this.storage.setItem('uplink-resume-session', result.sessionId);
+    this.storage.setItem(StorageKeys.RESUME_SESSION, result.sessionId);
     this.emitModelsFromResult(result);
   }
 
@@ -298,7 +301,7 @@ export class AcpClient {
     this.agentCapabilities = initResult.agentCapabilities ?? {};
 
     // Try to resume a saved session (e.g., after page reload)
-    const resumeId = this.storage.getItem('uplink-resume-session');
+    const resumeId = this.storage.getItem(StorageKeys.RESUME_SESSION);
     if (resumeId && this.agentCapabilities.loadSession) {
       try {
         const tLoad = performance.now();
@@ -323,7 +326,7 @@ export class AcpClient {
       } catch (err) {
         // session/load failed — clear stale key and fall through to new session
         console.debug('[resume] session/load failed:', err);
-        this.storage.removeItem('uplink-resume-session');
+        this.storage.removeItem(StorageKeys.RESUME_SESSION);
       }
     }
 
@@ -335,13 +338,13 @@ export class AcpClient {
     console.debug(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
     console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
     this.sessionId = result.sessionId;
-    this.storage.setItem('uplink-resume-session', result.sessionId);
+    this.storage.setItem(StorageKeys.RESUME_SESSION, result.sessionId);
 
     this.emitModelsFromResult(result);
   }
 
   private restoreCachedModels(): void {
-    const cached = this.storage.getItem('uplink-cached-models');
+    const cached = this.storage.getItem(StorageKeys.CACHED_MODELS);
     if (cached) {
       try {
         const models = JSON.parse(cached);
@@ -350,7 +353,7 @@ export class AcpClient {
         }
       } catch {
         // Corrupt cached models JSON - clear and move on
-        this.storage.removeItem('uplink-cached-models');
+        this.storage.removeItem(StorageKeys.CACHED_MODELS);
       }
     }
   }
@@ -652,13 +655,13 @@ export class AcpClient {
   private emitModelsFromResult(result: SessionNewResult): void {
     const fromConfig = extractModelFromConfigOptions(result.configOptions);
     if (fromConfig) {
-      this.storage.setItem('uplink-cached-models', JSON.stringify({
+      this.storage.setItem(StorageKeys.CACHED_MODELS, JSON.stringify({
         availableModels: fromConfig.availableModels,
         currentModelId: fromConfig.currentModelId,
       }));
       this.options.onModelsAvailable?.(fromConfig.availableModels, fromConfig.currentModelId);
     } else if (result.models?.availableModels) {
-      this.storage.setItem('uplink-cached-models', JSON.stringify(result.models));
+      this.storage.setItem(StorageKeys.CACHED_MODELS, JSON.stringify(result.models));
       this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
     }
   }

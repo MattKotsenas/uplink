@@ -9,6 +9,7 @@ import { SessionsModal, openSessionsModal } from './ui/sessions.js';
 import { fetchSessions as fetchSessionsApi } from './ui/sessions-api.js';
 import { CommandPalette, type PaletteItem } from './ui/command-palette.js';
 import { getCompletions, setAvailableModels } from './slash-commands.js';
+import { StorageKeys } from './storage-keys.js';
 import { handleSend, type AgentMode } from './prompt-controller.js';
 
 const conversation = new Conversation();
@@ -19,7 +20,7 @@ export function App() {
   const connectionState = useSignal<ConnectionState>('disconnected');
   const modelLabelText = useSignal('');
   const modelLabelHidden = useSignal(true);
-  const yoloMode = useSignal(localStorage.getItem('uplink-yolo') === 'true');
+  const yoloMode = useSignal(localStorage.getItem(StorageKeys.YOLO_MODE) === 'true');
   const paletteItems = useSignal<PaletteItem[]>([]);
   const paletteSelectedIndex = useSignal(0);
   const paletteVisible = useSignal(false);
@@ -39,7 +40,7 @@ export function App() {
     } else {
       document.documentElement.className = theme;
     }
-    localStorage.setItem('uplink-theme', theme);
+    localStorage.setItem(StorageKeys.THEME, theme);
   }
 
   // ─── Mode ───────────────────────────────────────────────────────────
@@ -107,7 +108,7 @@ export function App() {
       yoloMode: () => yoloMode.value,
       setYoloMode: (on) => {
         yoloMode.value = on;
-        localStorage.setItem('uplink-yolo', String(on));
+        localStorage.setItem(StorageKeys.YOLO_MODE, String(on));
       },
       setModelLabel: (name: string) => {
         modelLabelText.value = name;
@@ -207,7 +208,7 @@ export function App() {
     mounted.value = true;
 
     // Theme
-    const saved = localStorage.getItem('uplink-theme');
+    const saved = localStorage.getItem(StorageKeys.THEME);
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(saved ?? (prefersDark ? 'dark' : 'light'));
 
