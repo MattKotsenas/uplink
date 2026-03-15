@@ -165,15 +165,24 @@ export function ChatList({
     return conversation.onChange(() => setVersion((v) => v + 1));
   }, [conversation]);
 
-  // Auto-scroll on message changes
-  useEffect(() => {
-    scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  });
-
   // Show thinking indicator when prompting but no agent response yet
   const lastMsg = conversation.messages[conversation.messages.length - 1];
   const showThinking = conversation.isPrompting &&
     (!lastMsg || lastMsg.role === 'user');
+
+  // Auto-scroll when the timeline grows (new messages added).
+  // Uses instant scroll during rapid replay to avoid smooth-scroll animation pileup.
+  const prevTimelineLen = useRef(0);
+  useEffect(() => {
+    const len = conversation.timeline.length + (showThinking ? 1 : 0);
+    if (len !== prevTimelineLen.current) {
+      prevTimelineLen.current = len;
+      const prev = scrollContainer.style.scrollBehavior;
+      scrollContainer.style.scrollBehavior = 'instant';
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      scrollContainer.style.scrollBehavior = prev;
+    }
+  });
 
   return (
     <>

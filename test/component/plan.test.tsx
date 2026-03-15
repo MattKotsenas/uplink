@@ -54,7 +54,7 @@ describe('PlanCard', () => {
     expect(priority.classList.contains('priority-high')).toBe(true);
   });
 
-  it('updates when plan changes', () => {
+  it('updates when plan changes', async () => {
     const conv = new Conversation();
     conv.handleSessionUpdate({
       sessionUpdate: 'plan',
@@ -62,11 +62,12 @@ describe('PlanCard', () => {
         { content: 'Step 1', status: 'pending', priority: 'medium' },
       ],
     });
+    await new Promise<void>((r) => queueMicrotask(r));
 
     const { container } = render(<PlanCard conversation={conv} />);
     expect(container.querySelectorAll('.plan-entry').length).toBe(1);
 
-    act(() => {
+    await act(async () => {
       conv.handleSessionUpdate({
         sessionUpdate: 'plan',
         entries: [
@@ -74,6 +75,7 @@ describe('PlanCard', () => {
           { content: 'Step 2', status: 'in_progress', priority: 'medium' },
         ],
       });
+      await new Promise<void>((r) => queueMicrotask(r));
     });
 
     expect(container.querySelectorAll('.plan-entry').length).toBe(2);

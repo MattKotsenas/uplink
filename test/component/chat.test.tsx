@@ -106,12 +106,13 @@ describe('ChatList', () => {
     expect(messages[1].textContent).toContain('Hi there!');
   });
 
-  it('updates on streaming chunks', () => {
+  it('updates on streaming chunks', async () => {
     const conv = new Conversation();
     conv.handleSessionUpdate({
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'First' },
     });
+    await new Promise<void>((r) => queueMicrotask(r));
 
     const scrollContainer = document.createElement('div');
     const { container } = render(
@@ -120,11 +121,12 @@ describe('ChatList', () => {
 
     expect(container.textContent).toContain('First');
 
-    act(() => {
+    await act(async () => {
       conv.handleSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: ' Second' },
       });
+      await new Promise<void>((r) => queueMicrotask(r));
     });
 
     expect(container.textContent).toContain('First Second');

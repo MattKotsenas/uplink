@@ -311,42 +311,47 @@ describe('Conversation', () => {
   });
 
   describe('Change notification', () => {
-    it('onChange listener called after addUserMessage', () => {
+    it('onChange listener called after addUserMessage', async () => {
       const listener = vi.fn();
       conversation.onChange(listener);
       conversation.addUserMessage('test');
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    it('onChange listener called after handleSessionUpdate', () => {
+    it('onChange listener called after handleSessionUpdate', async () => {
       const listener = vi.fn();
       conversation.onChange(listener);
       conversation.handleSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'hi' }
       });
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    it('Unsubscribe stops notifications', () => {
+    it('Unsubscribe stops notifications', async () => {
       const listener = vi.fn();
       const unsubscribe = conversation.onChange(listener);
       
       conversation.addUserMessage('first');
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(listener).toHaveBeenCalledTimes(1);
 
       unsubscribe();
       conversation.addUserMessage('second');
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    it('Multiple listeners all notified', () => {
+    it('Multiple listeners all notified', async () => {
       const listenerA = vi.fn();
       const listenerB = vi.fn();
       conversation.onChange(listenerA);
       conversation.onChange(listenerB);
 
       conversation.addUserMessage('test');
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(listenerA).toHaveBeenCalledTimes(1);
       expect(listenerB).toHaveBeenCalledTimes(1);
     });
@@ -668,6 +673,49 @@ describe('Conversation', () => {
         { type: 'shell', id: 0 },
         { type: 'shell', id: 1 },
       ]);
+    });
+  });
+
+  describe('Notify batching', () => {
+    it('coalesces rapid notify() calls into a single listener invocation', async () => {
+      const listener = vi.fn();
+      conversation.onChange(listener);
+
+      // Fire 10 updates synchronously — should coalesce into 1 listener call
+      for (let i = 0; i < 10; i++) {
+        conversation.handleSessionUpdate({
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: `word${i} ` },
+        });
+      }
+
+      expect(listener).not.toHaveBeenCalled();
+
+      // Wait for the microtask to flush
+      await new Promise<void>((r) => queueMicrotask(r));
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires again for a second batch of updates', async () => {
+      const listener = vi.fn();
+      conversation.onChange(listener);
+
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'first batch' },
+      });
+
+      await new Promise<void>((r) => queueMicrotask(r));
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: ' second batch' },
+      });
+
+      await new Promise<void>((r) => queueMicrotask(r));
+      expect(listener).toHaveBeenCalledTimes(2);
     });
   });
 });

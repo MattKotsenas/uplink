@@ -78,10 +78,17 @@ export class Conversation {
     };
   }
 
+  private notifyScheduled = false;
+
   notify(): void {
-    for (const listener of this.listeners) {
-      listener();
-    }
+    if (this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    queueMicrotask(() => {
+      this.notifyScheduled = false;
+      for (const listener of this.listeners) {
+        listener();
+      }
+    });
   }
 
   // ─── User input ───────────────────────────────────────────────────
