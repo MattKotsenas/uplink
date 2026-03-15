@@ -8,8 +8,12 @@ import { Bridge, type BridgeOptions } from './bridge.js';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import type { SessionInfo } from '../shared/acp-types.js';
+import { DebugLog } from '../shared/debug-log.js';
 import { SessionBuffer } from './session-buffer.js';
 import createDebug from 'debug';
+
+/** Server-side debug log singleton. */
+export const serverDebugLog = new DebugLog();
 
 const log = {
   server: createDebug('uplink:server'),
@@ -116,6 +120,10 @@ export function startServer(options: ServerOptions): ServerResult {
   // Token endpoint (must be before SPA fallback)
   app.get('/api/token', (_req, res) => {
     res.json({ token: sessionToken, cwd: resolvedCwd });
+  });
+
+  app.get('/api/debug', (_req, res) => {
+    res.json({ entries: serverDebugLog.entries() });
   });
 
   // Sessions endpoint — forwards session/list to the CLI bridge and merges
@@ -225,10 +233,12 @@ export function startServer(options: ServerOptions): ServerResult {
 
     bridge.spawn();
     log.timing('bridge spawn: %dms', Date.now() - spawnStart);
+    serverDebugLog.append('conn', 'bridge_spawn', { spawnMs: Date.now() - spawnStart });
 
     // When bridge dies on its own, clean up
     bridge.onClose((code) => {
       log.bridge('closed with code %d', code);
+      serverDebugLog.append('conn', 'bridge_close', { code });
       if (activeSocket?.readyState === WebSocket.OPEN) {
         activeSocket.close(1000, 'Bridge closed');
       }
@@ -246,6 +256,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
     bridge.onError((err) => {
       log.bridge('error: %O', err);
+      serverDebugLog.append('conn', 'bridge_error', { error: String(err) });
       if (activeSocket?.readyState === WebSocket.OPEN) {
         activeSocket.close(1011, 'Bridge error');
       }
@@ -380,6 +391,7 @@ export function startServer(options: ServerOptions): ServerResult {
     const url = new URL(request.url!, `http://localhost`);
     const token = url.searchParams.get('token');
     if (token !== sessionToken) {
+      serverDebugLog.append('conn', 'ws_rejected', { reason: 'bad_token' });
       ws.close(4001, 'Unauthorized');
       return;
     }
@@ -387,10 +399,12 @@ export function startServer(options: ServerOptions): ServerResult {
     // Enforce single connection (close old socket, but DON'T kill bridge)
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       log.server('new connection replacing existing one');
+      serverDebugLog.append('conn', 'ws_replaced');
       activeSocket.close();
     }
 
     log.server('client connected');
+    serverDebugLog.append('conn', 'ws_connected');
     activeSocket = ws;
 
     let bridge: Bridge;
@@ -561,8 +575,15 @@ export function startServer(options: ServerOptions): ServerResult {
             if (replay.promptInProgress) {
               replayResult.promptInProgress = true;
             }
+            const skipReplay = !!parsed.params?.skipReplay;
+            serverDebugLog.append('proto', 'session_load_intercepted', {
+              sessionId: requestedId,
+              skipReplay,
+              historyLength: replay.history.length,
+              promptInProgress: replay.promptInProgress,
+            });
             ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: replayResult }));
-            if (!parsed.params?.skipReplay) {
+            if (!skipReplay) {
               for (const line of replay.history) {
                 ws.send(line);
               }
@@ -570,6 +591,7 @@ export function startServer(options: ServerOptions): ServerResult {
             return; // Don't forward to bridge
           }
           // No buffer — forward to CLI and start tracking
+          serverDebugLog.append('proto', 'session_load_forwarded', { sessionId: requestedId });
           sessionBuffer.activeSessionId = requestedId;
           pendingSessionLoadIds.add(parsed.id);
         }
@@ -594,6 +616,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
     ws.on('close', () => {
       log.server('client disconnected');
+      serverDebugLog.append('conn', 'ws_disconnected');
       if (activeSocket === ws) {
         activeSocket = null;
       }
