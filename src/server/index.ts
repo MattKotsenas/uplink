@@ -179,7 +179,12 @@ export function startServer(options: ServerOptions): ServerResult {
   // when a client reconnects and session/load returns "already loaded".
   // Keyed by session ID; survives session switches within the same bridge.
   let activeSessionId: string | null = null;
-  const sessionBuffers = new Map<string, { result: string; history: string[] }>();
+  const sessionBuffers = new Map<string, {
+    result: string;
+    history: string[];
+    /** JSON-RPC ID of the in-flight session/prompt (set when forwarded to bridge, cleared on response). */
+    activePromptRequestId?: number | string;
+  }>();
 
   // In-memory supplement for session listing. Tracks sessions created during
   // this bridge's lifetime because the CLI's session/list doesn't index them
@@ -447,6 +452,21 @@ export function startServer(options: ServerOptions): ServerResult {
         } catch { /* ignore */ }
       }
 
+      // Track prompt completion even when the client is disconnected.
+      // This must run before the readyState guard so we don't lose track
+      // of prompt lifecycle when the WebSocket drops mid-prompt.
+      if (activeSessionId) {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id != null) {
+            const buf = sessionBuffers.get(activeSessionId);
+            if (buf?.activePromptRequestId != null && msg.id === buf.activePromptRequestId) {
+              buf.activePromptRequestId = undefined;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
       if (ws.readyState !== WebSocket.OPEN) return;
 
       // Capture session/new results (for replay buffer + in-memory listing)
@@ -584,7 +604,11 @@ export function startServer(options: ServerOptions): ServerResult {
             // We have a buffer for this session — replay it instead of asking the CLI
             log.session('replaying %d buffered updates for session %s', buf.history.length, requestedId);
             activeSessionId = requestedId;
-            ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: JSON.parse(buf.result) }));
+            const replayResult = JSON.parse(buf.result);
+            if (buf.activePromptRequestId != null) {
+              replayResult.promptInProgress = true;
+            }
+            ws.send(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: replayResult }));
             for (const line of buf.history) {
               ws.send(line);
             }
@@ -601,17 +625,23 @@ export function startServer(options: ServerOptions): ServerResult {
         const promptParams = parsed.params as { sessionId?: string; prompt?: Array<{ type: string; text?: string }> } | undefined;
         const sid = promptParams?.sessionId;
         const buf = sid ? sessionBuffers.get(sid) : undefined;
-        if (buf && promptParams?.prompt) {
-          for (const part of promptParams.prompt) {
-            if (part.type === 'text' && part.text) {
-              buf.history.push(JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'session/update',
-                params: {
-                  sessionId: sid,
-                  update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: part.text } },
-                },
-              }));
+        if (buf) {
+          // Track the in-flight prompt so we can tell reconnecting clients
+          if (parsed.id != null) {
+            buf.activePromptRequestId = parsed.id;
+          }
+          if (promptParams?.prompt) {
+            for (const part of promptParams.prompt) {
+              if (part.type === 'text' && part.text) {
+                buf.history.push(JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'session/update',
+                  params: {
+                    sessionId: sid,
+                    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: part.text } },
+                  },
+                }));
+              }
             }
           }
         }

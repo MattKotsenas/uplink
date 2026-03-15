@@ -519,6 +519,67 @@ describe('ACP bridge full-flow integration', () => {
     },
     TEST_TIMEOUT,
   );
+
+  it(
+    'reconnect during in-flight prompt restores prompting state',
+    async () => {
+      // First connection — create session and start a permission prompt (blocks agent)
+      const ws1 = await connectWS();
+      const sessionId = await bootstrapSession(ws1);
+
+      // Start a permission prompt — the mock agent will block awaiting permission approval
+      const promptId = allocateId();
+      const promptPayload = {
+        jsonrpc: '2.0',
+        id: promptId,
+        method: 'session/prompt',
+        params: createPromptParams(sessionId, 'permission allow'),
+      };
+      wsSend(ws1, promptPayload);
+
+      // Wait for the permission request to arrive (agent is now blocked)
+      const permRequest = (await waitForMessage(
+        ws1,
+        (msg) => isRequest(msg) && msg.method === 'session/request_permission',
+      )) as JsonRpcRequest;
+      expect(permRequest.params).toBeDefined();
+
+      // Simulate phone sleep: close ws1 WITHOUT answering the permission request
+      await closeSocket(ws1);
+
+      // Reconnect — bridge is still alive, prompt is still in-flight
+      const ws2 = await connectWS();
+      await rpcRequest<{ protocolVersion: number }>(
+        ws2,
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+      );
+
+      // session/load should include promptInProgress: true
+      const loadResult = await rpcRequest<{ promptInProgress?: boolean }>(ws2, 'session/load', {
+        sessionId,
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      expect(loadResult.promptInProgress).toBe(true);
+
+      // Cancel the in-flight prompt so the agent finishes
+      sendNotification(ws2, 'session/cancel', { sessionId });
+
+      // The bridge should respond with stopReason: cancelled
+      const cancelResponse = await waitForMessage(
+        ws2,
+        (msg) => isResponse(msg) && (msg.result as SessionPromptResult)?.stopReason === 'cancelled',
+      );
+      expect(cancelResponse).toBeDefined();
+
+      // Now prompt again to verify the session is usable
+      const { requestId, promise } = promptAndCollect(ws2, sessionId, 'simple after cancel');
+      const messages = await promise;
+      expectStopReason(messages, requestId, 'end_turn');
+    },
+    TEST_TIMEOUT,
+  );
 });
 
 // ── Session listing and rename tests ─────────────────────────────────
