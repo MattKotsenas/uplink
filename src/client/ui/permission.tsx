@@ -99,13 +99,10 @@ export function PermissionCard({
 
   if (resolved) {
     return (
-      <div class="permission-request resolved">
+      <div class={`permission-request resolved ${wasApproved ? 'approved' : 'denied'}`}>
         <div class="permission-header">
           <Icon name={wasApproved ? 'check_circle' : 'cancel'} class="permission-icon" />
           <span class="permission-title">{req.title}</span>
-          <span class={`permission-outcome ${wasApproved ? 'approved' : 'denied'}`}>
-            {wasApproved ? 'Approved' : 'Denied'}
-          </span>
         </div>
       </div>
     );

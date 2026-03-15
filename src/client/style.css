@@ -723,21 +723,12 @@ button:disabled {
   opacity: 0.8;
 }
 
-.permission-outcome {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  margin-left: auto;
-  padding: var(--space-1) var(--space-1);
-  border-radius: var(--radius-md);
-  text-transform: uppercase;
-}
-.permission-outcome.approved { border: 1px solid var(--success); color: var(--success); }
-.permission-outcome.denied { border: 1px solid var(--danger); color: var(--danger); }
+.permission-request.approved { border-left-color: var(--success); }
+.permission-request.denied { border-left-color: var(--danger); }
 
 .permission-header {
+  font-size: var(--text-md);
   font-weight: 600;
-  color: var(--accent);
-  margin-bottom: var(--space-2);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -745,15 +736,16 @@ button:disabled {
 
 .permission-icon {
   font-size: 18px;
-}
-
-.permission-request.resolved .permission-header {
-  margin-bottom: 0;
+  opacity: 0.7;
 }
 
 .permission-actions {
   display: flex;
   gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.permission-message {
   margin-top: var(--space-2);
 }
 

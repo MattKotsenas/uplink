@@ -95,7 +95,7 @@ function ChatMessage({ msg }: { msg: ConversationMessage }) {
     <div class={`message ${msg.role}`}>
       <div
         class="content"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content.trimEnd()) }}
       />
     </div>
   );

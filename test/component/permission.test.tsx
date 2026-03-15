@@ -56,27 +56,27 @@ describe('PermissionCard', () => {
 
   it('collapses to summary after selection', () => {
     const req = setupRequest(conversation, 3, 'Delete file');
-    render(<PermissionCard req={req} conversation={conversation} />);
+    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
 
     fireEvent.click(screen.getByText('Allow once'));
     expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(screen.getByText('Approved')).toBeTruthy();
+    expect(container.querySelector('.permission-request.approved')).toBeTruthy();
   });
 
-  it('shows Approved label after allowing', () => {
+  it('shows approved border after allowing', () => {
     const req = setupRequest(conversation, 4, 'Write file');
-    render(<PermissionCard req={req} conversation={conversation} />);
+    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
 
     fireEvent.click(screen.getByText('Allow once'));
-    expect(screen.getByText('Approved')).toBeTruthy();
+    expect(container.querySelector('.permission-request.approved')).toBeTruthy();
   });
 
-  it('shows Denied label after rejecting', () => {
+  it('shows denied border after rejecting', () => {
     const req = setupRequest(conversation, 5, 'Execute cmd');
-    render(<PermissionCard req={req} conversation={conversation} />);
+    const { container } = render(<PermissionCard req={req} conversation={conversation} />);
 
     fireEvent.click(screen.getByText('Deny'));
-    expect(screen.getByText('Denied')).toBeTruthy();
+    expect(container.querySelector('.permission-request.denied')).toBeTruthy();
   });
 
   it('cancelAll sends cancelled outcome and clears active requests', () => {
