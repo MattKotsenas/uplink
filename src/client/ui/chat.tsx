@@ -152,8 +152,6 @@ export function ChatList({
   conversation: Conversation;
   scrollContainer: HTMLElement;
 }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-
   // Show thinking indicator when prompting but no agent response yet
   const msgs = conversation.messages.value;
   const lastMsg = msgs[msgs.length - 1];
@@ -194,7 +192,6 @@ export function ChatList({
           </div>
         </div>
       )}
-      <div ref={bottomRef} />
     </>
   );
 }

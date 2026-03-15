@@ -105,6 +105,39 @@ npx @mattkotsenas/uplink@latest [options]
 | `--cwd <path>` | Working directory for the Copilot subprocess | current dir |
 | `--help` | Show help and exit | — |
 
+## Commands
+
+Type `/` in the prompt to see all available commands:
+
+| Command | Description |
+|---|---|
+| `/model <name>` | Switch AI model |
+| `/agent` | Default agent mode |
+| `/plan` | Plan mode |
+| `/autopilot` | Autonomous mode (auto-continues until done) |
+| `/theme <dark\|light\|auto>` | Set color theme |
+| `/yolo <on\|off>` | Auto-approve all permission requests |
+| `/session <list\|new\|rename>` | Manage sessions |
+| `/clear` | Clear conversation history |
+| `/debug` | Download a debug log (see below) |
+
+### Debug Logs
+
+`/debug` downloads a JSON file (`uplink-debug-{timestamp}.json`) containing structured
+telemetry from both the client and server. This is useful for reporting bugs.
+
+You can analyze the file with the built-in viewer:
+
+```bash
+npx tsx bin/debug-viewer.ts uplink-debug-*.json            # summary
+npx tsx bin/debug-viewer.ts uplink-debug-*.json timeline    # merged client+server events
+npx tsx bin/debug-viewer.ts uplink-debug-*.json conn        # connection events only
+```
+
+> **Privacy warning:** Debug logs may contain personal information including session IDs,
+> file paths, tool call titles, model names, and localStorage contents. Review the file
+> before sharing.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build, and testing instructions.

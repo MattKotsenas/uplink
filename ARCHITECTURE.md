@@ -46,6 +46,8 @@ The bridge server intercepts a small number of messages for operational reasons:
 | `session/load` request | Replays from server-side buffer when session is already active. |
 | `uplink/shell` request | Handled server-side (executes shell commands in cwd). |
 | `uplink/rename_session` request | Handled server-side (writes to CLI's workspace.yaml). |
+| `uplink/clear_history` request | Clears the server-side replay buffer for a session. |
+| `GET /api/debug` | Returns the server's debug telemetry ring buffer. |
 
 All other messages pass through unmodified.
 
@@ -257,6 +259,53 @@ npx @mattkotsenas/uplink@latest --verbose
 # Specific namespaces only
 DEBUG=uplink:timing npx @mattkotsenas/uplink@latest
 ```
+
+## Debug Telemetry
+
+In addition to console logging, both the client and server maintain a structured ring buffer
+(`DebugLog`) that captures events for post-hoc debugging. The `/debug` slash command exports
+these buffers as a single JSON file.
+
+### Ring Buffer
+
+Each side uses a fixed-capacity ring buffer (default 5,000 entries). When full, the oldest
+entries are overwritten. Entries have high-resolution timestamps (`performance.now`) for
+within-side ordering and wall-clock timestamps (`Date.now`) for cross-side correlation.
+
+### Event Categories
+
+| Category | What it captures |
+|---|---|
+| `conn` | State transitions, WebSocket lifecycle, reconnect attempts, session init |
+| `proto` | Every JSON-RPC message (method, id, errors) in both directions |
+| `ui` | Conversation mutations (message append, tool call status, clear) |
+
+### Choke Point Instrumentation
+
+Instead of per-feature logging, events are captured at four client-side and five server-side
+bottlenecks that all code flows through. New features are automatically logged without
+additional instrumentation:
+
+**Client:** `setState()`, `handleMessageEvent()`, `sendRequest()`, `handleSessionUpdate()`
+
+**Server:** `wss.on('connection')`, `ws.on('message')`, `bridge.onMessage`, `bridge.onClose`, `ensureBridge()`
+
+### Export Format
+
+The `/debug` command fetches `GET /api/debug` for server entries, combines with client
+entries and a state snapshot, and triggers a browser download of `uplink-debug-{timestamp}.json`.
+
+## Scroll Follow
+
+The `ScrollFollower` class (`src/client/scroll-follower.ts`) manages auto-scroll behavior.
+It keeps the chat area scrolled to the bottom as new content arrives, and disengages when
+the user scrolls up.
+
+**Key design decision:** Follow-mode state is only evaluated on user-interaction events
+(`wheel`, `touchstart`, `pointerdown`), not on `scroll` events. This avoids a race condition
+where CSS `scroll-behavior: smooth` fires multiple intermediate scroll events during
+programmatic scrolling, which could incorrectly disengage follow mode when content grows
+rapidly (e.g., large text chunk immediately followed by a tool call).
 
 ## Message Flow
 
