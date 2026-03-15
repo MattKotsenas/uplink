@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 30000,
   retries: 0,
   workers: 1, // tests share a single mock-agent bridge; parallelism causes interleaving
+  globalSetup: './test/e2e/global-setup.ts',
   use: {
     baseURL: 'http://localhost:3000',
   },
@@ -23,7 +24,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run build && node dist/bin/cli.js --port 3000',
+    command: 'node dist/bin/cli.js --port 3000',
     port: 3000,
     reuseExistingServer: !process.env.CI,
     env: { COPILOT_COMMAND: 'node --import tsx src/mock/mock-agent.ts --acp --stdio' },
