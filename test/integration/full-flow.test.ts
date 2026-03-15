@@ -328,6 +328,57 @@ describe('ACP bridge full-flow integration', () => {
   );
 
   it(
+    'skips history replay when session/load includes skipReplay',
+    async () => {
+      // First connection — create session with history
+      const ws1 = await connectWS();
+      await rpcRequest(ws1, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
+      const sessionResult = await rpcRequest<{ sessionId: string }>(ws1, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+      const sessionId = sessionResult.sessionId;
+
+      // Send a prompt to generate history in the buffer
+      const { requestId: promptId1, promise: p1 } = promptAndCollect(ws1, sessionId, 'simple history entry');
+      await p1;
+
+      // Disconnect
+      await closeSocket(ws1);
+
+      // Reconnect
+      const ws2 = await connectWS();
+      await rpcRequest(ws2, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
+
+      // Collect messages arriving after session/load
+      const replayedMessages: string[] = [];
+      ws2.on('message', (data) => replayedMessages.push(data.toString()));
+
+      // session/load with skipReplay: true
+      const loadResult = await rpcRequest<{ sessionId?: string }>(ws2, 'session/load', {
+        sessionId,
+        cwd: process.cwd(),
+        mcpServers: [],
+        skipReplay: true,
+      });
+      expect(loadResult).toBeDefined();
+
+      // Wait for any messages that might arrive
+      await new Promise(r => setTimeout(r, 50));
+
+      // Should NOT have received any replayed session/update notifications
+      const updates = replayedMessages.filter(m => m.includes('"session/update"'));
+      expect(updates).toHaveLength(0);
+
+      // Session should still be usable
+      const { requestId, promise } = promptAndCollect(ws2, sessionId, 'simple after skip replay');
+      const messages = await promise;
+      expectStopReason(messages, requestId, 'end_turn');
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
     'spawns new bridge after previous bridge dies',
     async () => {
       // First connection

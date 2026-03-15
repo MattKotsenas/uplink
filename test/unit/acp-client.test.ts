@@ -484,4 +484,139 @@ describe('AcpClient Bug Fixes', () => {
       expect(calls).toContain('session/new');
     });
   });
+
+  describe('Same-session reconnect preservation', () => {
+    it('should save sessionId as previousSessionId on close', async () => {
+      // Establish a session first
+      (client as any).sessionId = 'sess-active';
+      (client as any).ws = mockWs;
+
+      // Simulate close
+      (client as any).handleClose();
+
+      // previousSessionId should be saved
+      expect((client as any).previousSessionId).toBe('sess-active');
+      // current sessionId should be cleared
+      expect((client as any).sessionId).toBeUndefined();
+    });
+
+    it('should pass skipReplay on session/load when reconnecting to the same session', async () => {
+      const onClearConversation = vi.fn();
+      const clientWithClear = new AcpClient({ ...options, onClearConversation });
+
+      // Simulate a previous session that was disconnected
+      (clientWithClear as any).previousSessionId = 'sess-same';
+
+      // localStorage has the same session ID
+      (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
+        if (key === 'uplink-resume-session') return 'sess-same';
+        return null;
+      });
+
+      const sendRequestSpy = vi.spyOn(clientWithClear as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: { loadSession: true } });
+      sendRequestSpy.mockResolvedValueOnce({ sessionId: 'sess-same' });
+
+      clientWithClear.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      // session/load should include skipReplay: true
+      const loadCall = sendRequestSpy.mock.calls.find(c => c[0] === 'session/load');
+      expect(loadCall).toBeDefined();
+      expect(loadCall![1]).toHaveProperty('skipReplay', true);
+    });
+
+    it('should NOT call onClearConversation on same-session reconnect', async () => {
+      const onClearConversation = vi.fn();
+      const clientWithClear = new AcpClient({ ...options, onClearConversation });
+
+      // Simulate a previous session that was disconnected
+      (clientWithClear as any).previousSessionId = 'sess-same';
+
+      // localStorage has the same session ID
+      (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
+        if (key === 'uplink-resume-session') return 'sess-same';
+        return null;
+      });
+
+      const sendRequestSpy = vi.spyOn(clientWithClear as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: { loadSession: true } });
+      sendRequestSpy.mockResolvedValueOnce({ sessionId: 'sess-same' });
+
+      clientWithClear.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      expect(onClearConversation).not.toHaveBeenCalled();
+    });
+
+    it('should call onClearConversation when creating a new session', async () => {
+      const onClearConversation = vi.fn();
+      const clientWithClear = new AcpClient({ ...options, onClearConversation });
+
+      // No previous session, no resume key
+      const sendRequestSpy = vi.spyOn(clientWithClear as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: {} });
+      sendRequestSpy.mockResolvedValueOnce({ sessionId: 'sess-brand-new' });
+
+      clientWithClear.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      expect(onClearConversation).toHaveBeenCalled();
+    });
+
+    it('should call onClearConversation when loading a different session', async () => {
+      const onClearConversation = vi.fn();
+      const clientWithClear = new AcpClient({ ...options, onClearConversation });
+
+      // Previous session was different
+      (clientWithClear as any).previousSessionId = 'sess-old';
+
+      // localStorage has a different session ID
+      (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
+        if (key === 'uplink-resume-session') return 'sess-different';
+        return null;
+      });
+
+      const sendRequestSpy = vi.spyOn(clientWithClear as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: { loadSession: true } });
+      sendRequestSpy.mockResolvedValueOnce({ sessionId: 'sess-different' });
+
+      clientWithClear.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      expect(onClearConversation).toHaveBeenCalled();
+    });
+
+    it('should NOT pass skipReplay when loading a different session on reconnect', async () => {
+      const clientWithClear = new AcpClient({ ...options, onClearConversation: vi.fn() });
+
+      (clientWithClear as any).previousSessionId = 'sess-old';
+
+      (global.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) => {
+        if (key === 'uplink-resume-session') return 'sess-different';
+        return null;
+      });
+
+      const sendRequestSpy = vi.spyOn(clientWithClear as any, 'sendRequest');
+      sendRequestSpy.mockResolvedValueOnce({ agentCapabilities: { loadSession: true } });
+      sendRequestSpy.mockResolvedValueOnce({ sessionId: 'sess-different' });
+
+      clientWithClear.connect();
+      const openCallback = mockWs.addEventListener.mock.calls.find(c => c[0] === 'open')?.[1];
+      openCallback();
+      await flushAsync();
+
+      const loadCall = sendRequestSpy.mock.calls.find(c => c[0] === 'session/load');
+      expect(loadCall).toBeDefined();
+      expect(loadCall![1]).not.toHaveProperty('skipReplay');
+    });
+  });
 });
