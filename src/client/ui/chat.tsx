@@ -4,7 +4,7 @@ import { Conversation, ConversationMessage } from '../conversation.js';
 import type { TimelineEntry } from '../conversation.js';
 import { ScrollFollower } from '../scroll-follower.js';
 import { ToolCallCard } from './tool-call.js';
-import { activeRequests } from './permission.js';
+import { activeRequests, type ActiveRequest } from './permission.js';
 import { PlanCard } from './plan.js';
 import { ShellOutput } from './shell.js';
 import { Marked } from 'marked';
@@ -108,9 +108,11 @@ function ChatMessage({ msg }: { msg: ConversationMessage }) {
 function TimelineItem({
   entry,
   conversation,
+  permissions,
 }: {
   entry: TimelineEntry;
   conversation: Conversation;
+  permissions: ActiveRequest[];
 }) {
   switch (entry.type) {
     case 'message': {
@@ -120,7 +122,7 @@ function TimelineItem({
     case 'toolCall': {
       const tc = conversation.toolCalls.value.get(entry.toolCallId);
       if (!tc) return null;
-      const permReq = activeRequests.value.find(r => r.toolCallId === entry.toolCallId);
+      const permReq = permissions.find(r => r.toolCallId === entry.toolCallId);
       return <ToolCallCard tc={tc} permissionRequest={permReq} />;
     }
     case 'plan':
@@ -175,11 +177,13 @@ export function ChatList({
   });
 
   const timeline = conversation.timeline.value;
+  // Read activeRequests so this component re-renders when permissions arrive/resolve
+  const permissions = activeRequests.value;
 
   return (
     <>
       {timeline.map((entry) => (
-        <TimelineItem key={timelineKey(entry)} entry={entry} conversation={conversation} />
+        <TimelineItem key={timelineKey(entry)} entry={entry} conversation={conversation} permissions={permissions} />
       ))}
       {showThinking && (
         <div class="message agent thinking-indicator">
