@@ -86,6 +86,8 @@ export class AcpClient {
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private connectPromise?: Promise<void>;
   private agentCapabilities: AgentCapabilities = {};
+  /** Set during initializeSession when session/load indicates an in-flight prompt. */
+  private promptInProgressOnReconnect = false;
 
   constructor(private readonly options: AcpClientOptions) {}
 
@@ -259,7 +261,7 @@ export class AcpClient {
       .then(() => {
         console.debug(`[timing] WS open → ready: ${(performance.now() - wsOpenTime).toFixed(0)}ms`);
         this.reconnectAttempts = 0;
-        this.setState("ready");
+        this.setState(this.promptInProgressOnReconnect ? "prompting" : "ready");
         callbacks?.onReady?.();
       })
       .catch((error) => {
@@ -275,6 +277,7 @@ export class AcpClient {
 
   private async initializeSession(): Promise<void> {
     const t0 = performance.now();
+    this.promptInProgressOnReconnect = false;
 
     const initResult = await this.sendRequest<InitializeResult>("initialize", {
       protocolVersion: PROTOCOL_VERSION,
@@ -298,6 +301,9 @@ export class AcpClient {
         console.debug(`[timing] session/load: ${(performance.now() - tLoad).toFixed(0)}ms`);
         console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
         this.sessionId = loadResult.sessionId ?? resumeId;
+        if ((loadResult as Record<string, unknown>).promptInProgress) {
+          this.promptInProgressOnReconnect = true;
+        }
         if (loadResult.models?.availableModels) {
           localStorage.setItem('uplink-cached-models', JSON.stringify(loadResult.models));
           this.options.onModelsAvailable?.(loadResult.models.availableModels, loadResult.models.currentModelId);
@@ -408,6 +414,12 @@ export class AcpClient {
 
     const pending = this.pendingRequests.get(message.id);
     if (!pending) {
+      // No pending request for this response. If we're in "prompting" state
+      // (restored after reconnect), this is the orphaned prompt response
+      // arriving from the bridge — transition back to "ready".
+      if (this.state === "prompting") {
+        this.setState("ready");
+      }
       return;
     }
 
