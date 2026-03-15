@@ -149,7 +149,7 @@ export async function startTunnel(options: TunnelOptions): Promise<TunnelResult>
       try {
         child.kill();
       } catch {
-        // ignore
+        // Process may have already exited - safe to ignore
       }
 
       reject(error);
@@ -241,7 +241,7 @@ export function stopTunnel(tunnel: TunnelResult): void {
         proc.kill();
       }
     } catch {
-      // ignore
+      // Process may have already exited - safe to ignore
     }
   };
 
@@ -255,6 +255,7 @@ export function stopTunnel(tunnel: TunnelResult): void {
       return;
     }
   } catch {
+    // SIGINT failed (process already dead) - force kill as fallback
     forceKill();
     return;
   }

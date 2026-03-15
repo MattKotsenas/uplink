@@ -428,7 +428,7 @@ export function startServer(options: ServerOptions): ServerResult {
             else rpc.resolve(msg.result);
             return; // Don't forward server-internal responses to client
           }
-        } catch { /* ignore */ }
+        } catch { /* Not valid JSON - ignore malformed server RPC response */ }
       }
 
       // Track prompt completion even when the client is disconnected.
@@ -461,7 +461,7 @@ export function startServer(options: ServerOptions): ServerResult {
               pendingSessionLoadIds.delete(msg.id);
             }
           }
-        } catch { /* ignore */ }
+        } catch { /* Not valid JSON - ignore malformed session/load response */ }
       }
 
       ws.send(line);

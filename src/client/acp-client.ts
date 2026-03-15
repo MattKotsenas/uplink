@@ -57,9 +57,17 @@ export type ConnectionState =
   | "ready"
   | "prompting";
 
+/** Abstraction over session persistence (defaults to localStorage). */
+export interface SessionStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 export interface AcpClientOptions {
   wsUrl: string;
   cwd: string;
+  storage?: SessionStorage;
   onStateChange?: (state: ConnectionState) => void;
   onSessionUpdate?: (update: SessionUpdate) => void;
   onModelsAvailable?: (models: AvailableModel[], currentModelId?: string) => void;
@@ -88,10 +96,12 @@ export class AcpClient {
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private connectPromise?: Promise<void>;
   private agentCapabilities: AgentCapabilities = {};
-  /** Set during initializeSession when session/load indicates an in-flight prompt. */
   private promptInProgressOnReconnect = false;
+  private readonly storage: SessionStorage;
 
-  constructor(private readonly options: AcpClientOptions) {}
+  constructor(private readonly options: AcpClientOptions) {
+    this.storage = options.storage ?? localStorage;
+  }
 
   get connectionState(): ConnectionState {
     return this.state;
@@ -123,7 +133,7 @@ export class AcpClient {
       mcpServers: [],
     } satisfies SessionLoadParams);
     this.sessionId = sessionId;
-    localStorage.setItem('uplink-resume-session', sessionId);
+    this.storage.setItem('uplink-resume-session', sessionId);
   }
 
   async newSession(): Promise<void> {
@@ -133,7 +143,7 @@ export class AcpClient {
       { cwd: this.options.cwd, mcpServers: [] },
     );
     this.sessionId = result.sessionId;
-    localStorage.setItem('uplink-resume-session', result.sessionId);
+    this.storage.setItem('uplink-resume-session', result.sessionId);
     this.emitModelsFromResult(result);
   }
 
@@ -288,7 +298,7 @@ export class AcpClient {
     this.agentCapabilities = initResult.agentCapabilities ?? {};
 
     // Try to resume a saved session (e.g., after page reload)
-    const resumeId = localStorage.getItem('uplink-resume-session');
+    const resumeId = this.storage.getItem('uplink-resume-session');
     if (resumeId && this.agentCapabilities.loadSession) {
       try {
         const tLoad = performance.now();
@@ -313,7 +323,7 @@ export class AcpClient {
       } catch (err) {
         // session/load failed — clear stale key and fall through to new session
         console.debug('[resume] session/load failed:', err);
-        localStorage.removeItem('uplink-resume-session');
+        this.storage.removeItem('uplink-resume-session');
       }
     }
 
@@ -325,13 +335,13 @@ export class AcpClient {
     console.debug(`[timing] session/new: ${(performance.now() - tNew).toFixed(0)}ms`);
     console.debug(`[timing] total initializeSession: ${(performance.now() - t0).toFixed(0)}ms`);
     this.sessionId = result.sessionId;
-    localStorage.setItem('uplink-resume-session', result.sessionId);
+    this.storage.setItem('uplink-resume-session', result.sessionId);
 
     this.emitModelsFromResult(result);
   }
 
   private restoreCachedModels(): void {
-    const cached = localStorage.getItem('uplink-cached-models');
+    const cached = this.storage.getItem('uplink-cached-models');
     if (cached) {
       try {
         const models = JSON.parse(cached);
@@ -339,7 +349,8 @@ export class AcpClient {
           this.options.onModelsAvailable?.(models.availableModels, models.currentModelId);
         }
       } catch {
-        localStorage.removeItem('uplink-cached-models');
+        // Corrupt cached models JSON - clear and move on
+        this.storage.removeItem('uplink-cached-models');
       }
     }
   }
@@ -641,13 +652,13 @@ export class AcpClient {
   private emitModelsFromResult(result: SessionNewResult): void {
     const fromConfig = extractModelFromConfigOptions(result.configOptions);
     if (fromConfig) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify({
+      this.storage.setItem('uplink-cached-models', JSON.stringify({
         availableModels: fromConfig.availableModels,
         currentModelId: fromConfig.currentModelId,
       }));
       this.options.onModelsAvailable?.(fromConfig.availableModels, fromConfig.currentModelId);
     } else if (result.models?.availableModels) {
-      localStorage.setItem('uplink-cached-models', JSON.stringify(result.models));
+      this.storage.setItem('uplink-cached-models', JSON.stringify(result.models));
       this.options.onModelsAvailable?.(result.models.availableModels, result.models.currentModelId);
     }
   }

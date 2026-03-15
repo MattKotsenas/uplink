@@ -33,7 +33,7 @@ export class SessionBuffer {
         const buf = sid ? this.sessionBuffers.get(sid) : undefined;
         if (buf) buf.history.push(line);
       }
-    } catch { /* ignore */ }
+    } catch { /* Not valid JSON - ignore malformed message */ }
   }
 
   /** Track when a prompt response arrives, clear activePromptRequestId. */
@@ -47,7 +47,7 @@ export class SessionBuffer {
           buf.activePromptRequestId = undefined;
         }
       }
-    } catch { /* ignore */ }
+    } catch { /* Not valid JSON - ignore malformed message */ }
   }
 
   /** Capture session/new result, create buffer entry and recentSessions entry. */
@@ -83,7 +83,7 @@ export class SessionBuffer {
         }
         return true;
       }
-    } catch { /* ignore */ }
+    } catch { /* Not valid JSON - ignore malformed message */ }
     return false;
   }
 
