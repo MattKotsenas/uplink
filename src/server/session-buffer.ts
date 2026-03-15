@@ -72,14 +72,18 @@ export class SessionBuffer {
     return false;
   }
 
-  /** Capture session/load result, update buffer. */
+  /** Capture session/load result, update or create buffer. */
   captureLoadSession(requestId: number | string, line: string): boolean {
     try {
       const msg = JSON.parse(line);
       if (msg.id != null && msg.id === requestId && msg.result) {
         if (this.activeSessionId) {
           const buf = this.sessionBuffers.get(this.activeSessionId);
-          if (buf) buf.result = JSON.stringify(msg.result);
+          if (buf) {
+            buf.result = JSON.stringify(msg.result);
+          } else {
+            this.sessionBuffers.set(this.activeSessionId, { result: JSON.stringify(msg.result), history: [] });
+          }
         }
         return true;
       }
