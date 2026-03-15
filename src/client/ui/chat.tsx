@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { Conversation, ConversationMessage } from '../conversation.js';
 import type { TimelineEntry } from '../conversation.js';
+import { ScrollFollower } from '../scroll-follower.js';
 import { ToolCallCard } from './tool-call.js';
 import { PermissionCard, activeRequests } from './permission.js';
 import { PlanCard } from './plan.js';
@@ -167,29 +168,19 @@ export function ChatList({
     (!lastMsg || lastMsg.role === 'user');
 
   // Auto-scroll: follow the conversation unless the user scrolled up.
-  // Track follow state via a scroll event listener. Use a guard to
-  // distinguish user scrolls from programmatic scrolls.
-  const following = useRef(true);
-  const programmaticScroll = useRef(false);
+  const followerRef = useRef<ScrollFollower | null>(null);
 
   useEffect(() => {
-    const onScroll = () => {
-      if (programmaticScroll.current) {
-        programmaticScroll.current = false;
-        return;
-      }
-      const gap = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
-      following.current = gap <= 50;
+    const follower = new ScrollFollower(scrollContainer);
+    followerRef.current = follower;
+    return () => {
+      follower.dispose();
+      followerRef.current = null;
     };
-    scrollContainer.addEventListener('scroll', onScroll, { passive: true });
-    return () => scrollContainer.removeEventListener('scroll', onScroll);
   }, [scrollContainer]);
 
   useEffect(() => {
-    if (following.current) {
-      programmaticScroll.current = true;
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
+    followerRef.current?.scrollIfFollowing();
   });
 
   const timeline = conversation.timeline.value;
