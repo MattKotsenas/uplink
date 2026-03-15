@@ -119,16 +119,13 @@ function TimelineItem({
     }
     case 'toolCall': {
       const tc = conversation.toolCalls.value.get(entry.toolCallId);
-      return tc ? <ToolCallCard tc={tc} /> : null;
+      if (!tc) return null;
+      const permReq = activeRequests.value.find(r => r.toolCallId === entry.toolCallId);
+      return <ToolCallCard tc={tc} permissionRequest={permReq} />;
     }
-    case 'permission': {
-      const req = activeRequests.value.find(
-        (r) => r.requestId === entry.requestId,
-      );
-      return req ? (
-        <PermissionCard req={req} conversation={conversation} />
-      ) : null;
-    }
+    case 'permission':
+      // Permissions are now rendered inline in the tool call card
+      return null;
     case 'plan':
       return <PlanCard conversation={conversation} />;
     case 'shell': {

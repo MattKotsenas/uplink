@@ -621,6 +621,7 @@ button:disabled {
 
 .tool-call.completed   { border-left-color: var(--success); }
 .tool-call.failed      { border-left-color: var(--danger); }
+.tool-call.awaiting-permission { border-left-color: var(--warning); }
 
 .tool-call-header {
   padding: var(--space-2) var(--space-3);
@@ -705,6 +706,26 @@ button:disabled {
 @keyframes thinking-expand {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+.tool-call-denied {
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Inline permission UI inside tool call cards */
+.tool-call .permission-message {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.tool-call .permission-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 /* Permission Requests */

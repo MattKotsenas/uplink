@@ -11,6 +11,7 @@ export type PermissionResponder = (outcome: PermissionOutcome) => void;
 
 export interface ActiveRequest {
   requestId: number;
+  toolCallId: string;
   title: string;
   options: PermissionOption[];
   respond: PermissionResponder;
@@ -39,6 +40,7 @@ export function showPermissionRequest(
 
   const req: ActiveRequest = {
     requestId,
+    toolCallId,
     title,
     options,
     respond,

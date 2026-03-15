@@ -4,6 +4,7 @@ import hljs from 'highlight.js/lib/core';
 import { TrackedToolCall } from '../conversation.js';
 import type { ToolKind, ToolCallContent } from '../../shared/acp-types.js';
 import { Icon } from './icon.js';
+import type { ActiveRequest } from './permission.js';
 
 // ─── Pure helpers ─────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ function extractCommand(rawInput: unknown): string | null {
   return null;
 }
 
-export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
+export function ToolCallCard({ tc, permissionRequest }: { tc: TrackedToolCall; permissionRequest?: ActiveRequest }) {
   const [collapsed, setCollapsed] = useState(true);
 
   if (tc.kind === 'think') {
@@ -100,19 +101,58 @@ export function ToolCallCard({ tc }: { tc: TrackedToolCall }) {
 
   const command = extractCommand(tc.rawInput);
 
+  // Permission state
+  const hasPerm = !!permissionRequest;
+  const permResolved = permissionRequest?.resolved.value ?? false;
+  const permDenied = permResolved && !permissionRequest?.options
+    .find(o => o.optionId === permissionRequest.selectedOptionId.value)
+    ?.kind.startsWith('allow');
+  const awaitingPermission = hasPerm && !permResolved;
+
+  const statusCls = awaitingPermission ? 'awaiting-permission' : statusClass(tc.status);
+
   return (
-    <div class={`tool-call ${statusClass(tc.status)}`} data-tool-call-id={tc.toolCallId}>
+    <div class={`tool-call ${statusCls}`} data-tool-call-id={tc.toolCallId}>
       <div
         class="tool-call-header"
         onClick={() => setCollapsed(!collapsed)}
       >
-        <Icon name={getKindIcon(tc.kind)} class="kind-icon" />
+        <Icon name={awaitingPermission ? 'lock' : getKindIcon(tc.kind)} class="kind-icon" />
         <span class="tool-call-title">{tc.title}</span>
       </div>
       {command && (
         <pre class="tool-call-command"><code
           dangerouslySetInnerHTML={{ __html: hljs.highlightAuto(command).value }}
         /></pre>
+      )}
+      {awaitingPermission && (
+        <>
+          <div class="permission-message">
+            Copilot wants to perform this action. Allow?
+          </div>
+          <div class="permission-actions">
+            {permissionRequest!.options.map((option) => {
+              const isAllow = option.kind.startsWith('allow');
+              return (
+                <button
+                  key={option.optionId}
+                  type="button"
+                  class={`permission-btn ${isAllow ? 'allow' : 'reject'}`}
+                  onClick={() => {
+                    permissionRequest!.respond({ outcome: 'selected', optionId: option.optionId });
+                    permissionRequest!.resolved.value = true;
+                    permissionRequest!.selectedOptionId.value = option.optionId;
+                  }}
+                >
+                  {option.name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {permDenied && (
+        <div class="tool-call-denied">Permission denied</div>
       )}
       <div class="tool-call-body" hidden={collapsed}>
         {tc.content.length > 0

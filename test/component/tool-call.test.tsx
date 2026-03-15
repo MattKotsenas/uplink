@@ -136,6 +136,7 @@ describe('ToolCallCard', () => {
     function makePermReq(overrides: Partial<ActiveRequest> = {}): ActiveRequest {
       return {
         requestId: 1,
+        toolCallId: 'tc-1',
         title: 'Run command',
         options: [
           { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
