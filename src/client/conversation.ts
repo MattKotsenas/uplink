@@ -52,7 +52,6 @@ export interface TrackedShellResult {
 export type TimelineEntry =
   | { type: "message"; index: number }
   | { type: "toolCall"; toolCallId: string }
-  | { type: "permission"; requestId: number }
   | { type: "plan" }
   | { type: "shell"; id: number };
 
@@ -198,7 +197,6 @@ export class Conversation {
       options,
       resolved: false,
     }];
-    this._timeline.value = [...this._timeline.value, { type: "permission", requestId }];
   }
 
   resolvePermission(requestId: number, optionId?: string): void {

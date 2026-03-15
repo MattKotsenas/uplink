@@ -626,16 +626,26 @@ describe('Conversation', () => {
       ]);
     });
 
-    it('agent text after permission creates new bubble instead of appending', () => {
+    it('agent text after tool call with permission creates new bubble', () => {
       conversation.handleSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'I need to...' }
+      });
+      // Tool call that needs permission
+      conversation.handleSessionUpdate({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc1',
+        title: 'Run command',
+        kind: 'execute',
+        status: 'pending',
+        content: [],
+        locations: [],
       });
       conversation.trackPermission(1, 'tc1', 'Allow?', [
         { optionId: 'yes', name: 'Yes', kind: 'allow_once' }
       ]);
 
-      // Agent resumes - should create new bubble
+      // Agent resumes - should create new bubble (tool call is between)
       conversation.handleSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'Done.' }
@@ -646,7 +656,7 @@ describe('Conversation', () => {
       expect(conversation.messages.value[1].content).toBe('Done.');
       expect(conversation.timeline.value).toEqual([
         { type: 'message', index: 0 },
-        { type: 'permission', requestId: 1 },
+        { type: 'toolCall', toolCallId: 'tc1' },
         { type: 'message', index: 1 }
       ]);
     });

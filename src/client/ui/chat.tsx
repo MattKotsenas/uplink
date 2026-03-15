@@ -4,7 +4,7 @@ import { Conversation, ConversationMessage } from '../conversation.js';
 import type { TimelineEntry } from '../conversation.js';
 import { ScrollFollower } from '../scroll-follower.js';
 import { ToolCallCard } from './tool-call.js';
-import { PermissionCard, activeRequests } from './permission.js';
+import { activeRequests } from './permission.js';
 import { PlanCard } from './plan.js';
 import { ShellOutput } from './shell.js';
 import { Marked } from 'marked';
@@ -123,9 +123,6 @@ function TimelineItem({
       const permReq = activeRequests.value.find(r => r.toolCallId === entry.toolCallId);
       return <ToolCallCard tc={tc} permissionRequest={permReq} />;
     }
-    case 'permission':
-      // Permissions are now rendered inline in the tool call card
-      return null;
     case 'plan':
       return <PlanCard conversation={conversation} />;
     case 'shell': {
@@ -139,7 +136,6 @@ function timelineKey(entry: TimelineEntry): string {
   switch (entry.type) {
     case 'message': return `msg-${entry.index}`;
     case 'toolCall': return `tc-${entry.toolCallId}`;
-    case 'permission': return `perm-${entry.requestId}`;
     case 'plan': return 'plan';
     case 'shell': return `shell-${entry.id}`;
   }
