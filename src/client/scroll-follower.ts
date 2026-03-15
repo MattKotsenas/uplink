@@ -102,10 +102,14 @@ export class ScrollFollower {
   }
 
   private scrollToBottom(): void {
+    const gap = this.gapFromBottom();
+    // Jump instantly when far from bottom (e.g. session resume/switch);
+    // smooth scroll when close (e.g. new streaming chunk).
+    const behavior = gap > this.container.clientHeight * 5 ? 'instant' : 'smooth';
     if (typeof this.container.scrollTo === 'function') {
       this.container.scrollTo({
         top: this.container.scrollHeight,
-        behavior: 'smooth',
+        behavior,
       });
     } else {
       this.container.scrollTop = this.container.scrollHeight;
