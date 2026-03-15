@@ -574,8 +574,8 @@ test('failed tool call shows status message when expanded', async ({ page }) => 
   const toolCall = page.locator('.tool-call').first();
   await expect(toolCall).toBeVisible({ timeout: 10000 });
 
-  // Should show failed status
-  await expect(toolCall.locator('.status')).toContainText('failed', { timeout: 10000 });
+  // Should show failed status via border color class
+  await expect(toolCall).toHaveClass(/failed/, { timeout: 10000 });
 
   // Click to expand
   await toolCall.locator('.tool-call-header').click();

@@ -19,12 +19,12 @@ function makeTc(overrides: Partial<TrackedToolCall> = {}): TrackedToolCall {
 }
 
 describe('ToolCallCard', () => {
-  it('renders a tool call with icon, title, and status', () => {
+  it('renders a tool call with icon, title, and status border', () => {
     const { container } = render(<ToolCallCard tc={makeTc()} />);
 
     expect(container.querySelector('.kind-icon')!.textContent).toBe('description');
     expect(container.querySelector('.tool-call-title')!.textContent).toBe('Read file.ts');
-    expect(container.querySelector('.status')!.textContent).toBe('pending');
+    expect(container.querySelector('.tool-call.pending')).toBeTruthy();
   });
 
   it('renders thinking block as <details>', () => {
@@ -39,8 +39,8 @@ describe('ToolCallCard', () => {
     const details = container.querySelector('details.tool-call-thinking');
     expect(details).toBeTruthy();
     expect(container.querySelector('.tool-call-title')!.textContent).toBe('Thinking…');
-    // Status class should be kebab-case, not snake_case
-    expect(container.querySelector('.status.in-progress')).toBeTruthy();
+    // Status class applied to the tool-call element
+    expect(container.querySelector('.tool-call.in-progress')).toBeTruthy();
   });
 
   it('thinking shows "Thought" when completed', () => {
