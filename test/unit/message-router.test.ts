@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { routeBridgeMessage, routeClientMessage } from '../../src/server/message-router.js';
-import { SessionBuffer } from '../../src/server/session-buffer.js';
+import { SessionStore } from '../../src/server/session-store.js';
 
 // ─── routeBridgeMessage ───────────────────────────────────────────────
 
@@ -89,14 +89,14 @@ describe('routeBridgeMessage', () => {
 // ─── routeClientMessage ──────────────────────────────────────────────
 
 describe('routeClientMessage', () => {
-  function makeBuffer(): SessionBuffer {
-    return new SessionBuffer('/test/cwd');
+  function makeStore(): SessionStore {
+    return new SessionStore();
   }
 
   const baseOpts = {
     cachedInitializeResponse: null as string | null,
     hasInitializePromise: false,
-    sessionBuffer: makeBuffer(),
+    sessionStore: makeStore(),
     cwd: '/test/cwd',
   };
 
@@ -161,20 +161,16 @@ describe('routeClientMessage', () => {
     expect(action).toEqual({ type: 'initialize_error', id: 1, message: 'Bridge not available' });
   });
 
-  it('returns session_load_replay when buffer exists for session', () => {
-    const buf = makeBuffer();
-    // Manually set up a buffer entry via captureNewSession
+  it('returns session_load_replay when session exists in store', () => {
+    const store = makeStore();
     const sessionId = 'test-session-1';
-    const newResult = JSON.stringify({
-      jsonrpc: '2.0', id: 10, result: { sessionId },
-    });
-    buf.captureNewSession(10, newResult, '/test/cwd');
+    store.getOrCreate(sessionId, '/test/cwd', JSON.stringify({ sessionId }));
 
     const raw = JSON.stringify({
       jsonrpc: '2.0', id: 5, method: 'session/load',
       params: { sessionId },
     });
-    const action = routeClientMessage(raw, { ...baseOpts, sessionBuffer: buf });
+    const action = routeClientMessage(raw, { ...baseOpts, sessionStore: store });
     expect(action.type).toBe('session_load_replay');
     if (action.type === 'session_load_replay') {
       expect(action.id).toBe(5);
@@ -182,7 +178,7 @@ describe('routeClientMessage', () => {
     }
   });
 
-  it('returns session_load_forward when no buffer exists', () => {
+  it('returns session_load_forward when no session exists', () => {
     const raw = JSON.stringify({
       jsonrpc: '2.0', id: 5, method: 'session/load',
       params: { sessionId: 'unknown-session' },
@@ -196,14 +192,14 @@ describe('routeClientMessage', () => {
   });
 
   it('returns forward with trackPrompt for session/prompt', () => {
-    const buf = makeBuffer();
-    buf.activeSessionId = 's1';
+    const store = makeStore();
+    store.activeSessionId = 's1';
 
     const raw = JSON.stringify({
       jsonrpc: '2.0', id: 7, method: 'session/prompt',
       params: { sessionId: 's1', prompt: [{ type: 'text', text: 'hello' }] },
     });
-    const action = routeClientMessage(raw, { ...baseOpts, sessionBuffer: buf });
+    const action = routeClientMessage(raw, { ...baseOpts, sessionStore: store });
     expect(action.type).toBe('forward');
     if (action.type === 'forward') {
       expect(action.trackPrompt).toEqual({
@@ -239,13 +235,13 @@ describe('routeClientMessage', () => {
   });
 
   it('does not track prompt when no active session', () => {
-    const buf = makeBuffer();
+    const store = makeStore();
     // activeSessionId is null by default
     const raw = JSON.stringify({
       jsonrpc: '2.0', id: 7, method: 'session/prompt',
       params: { sessionId: 's1', prompt: [{ type: 'text', text: 'hello' }] },
     });
-    const action = routeClientMessage(raw, { ...baseOpts, sessionBuffer: buf });
+    const action = routeClientMessage(raw, { ...baseOpts, sessionStore: store });
     expect(action.type).toBe('forward');
     if (action.type === 'forward') {
       expect(action.trackPrompt).toBeUndefined();

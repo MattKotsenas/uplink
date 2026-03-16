@@ -9,7 +9,7 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import type { SessionInfo } from '../shared/acp-types.js';
 import { DebugLog } from '../shared/debug-log.js';
-import { SessionBuffer } from './session-buffer.js';
+import { SessionStore } from './session-store.js';
 import { routeBridgeMessage, routeClientMessage } from './message-router.js';
 import createDebug from 'debug';
 
@@ -124,7 +124,7 @@ export function startServer(options: ServerOptions): ServerResult {
   });
 
   app.get('/api/debug', (_req, res) => {
-    const bufSnapshot = sessionBuffer.snapshot();
+    const bufSnapshot = sessionStore.snapshot();
     res.json({
       entries: serverDebugLog.entries(),
       snapshot: {
@@ -158,7 +158,7 @@ export function startServer(options: ServerOptions): ServerResult {
 
     // Merge with in-memory supplement (sessions created this bridge lifetime)
     const cliIds = new Set(cliSessions.map(s => s.id));
-    const supplement = sessionBuffer.listSessions(cwd)
+    const supplement = sessionStore.list(cwd)
       .filter(s => !cliIds.has(s.id));
 
     const merged = [...cliSessions, ...supplement]
@@ -198,7 +198,7 @@ export function startServer(options: ServerOptions): ServerResult {
   // Session replay buffer — remembers session history so we can replay it
   // when a client reconnects and session/load returns "already loaded".
   // Keyed by session ID; survives session switches within the same bridge.
-  const sessionBuffer = new SessionBuffer(resolvedCwd);
+  const sessionStore = new SessionStore();
 
   /** Internal request ID counter for server-originated RPC calls to the bridge. */
   let serverRpcId = 100_000;
@@ -260,8 +260,8 @@ export function startServer(options: ServerOptions): ServerResult {
         rejectEagerInit?.(new Error('Bridge closed during eager initialize'));
         resolveEagerInit = null;
         rejectEagerInit = null;
-        // Clear session buffers — sessions are gone with the bridge
-        sessionBuffer.reset();
+        // Clear session state - sessions are gone with the bridge
+        sessionStore.reset();
       }
     });
 
@@ -468,45 +468,85 @@ export function startServer(options: ServerOptions): ServerResult {
           rpc.reject(new Error(action.error));
           return;
         }
-        case 'drop':
+        case 'drop': {
           // Buffer + track even when WS is closed
-          sessionBuffer.bufferUpdate(line);
-          sessionBuffer.trackPromptCompletion(line);
+          const activeId = sessionStore.activeSessionId;
+          if (activeId) {
+            const session = sessionStore.get(activeId);
+            if (session) {
+              if (line.includes('"session/update"')) {
+                try {
+                  const msg = JSON.parse(line);
+                  if (msg.method === 'session/update') {
+                    const sid = msg.params?.sessionId;
+                    if (sid && sessionStore.get(sid)) {
+                      sessionStore.get(sid)!.recordUpdate(line);
+                    }
+                  }
+                } catch { /* Not valid JSON */ }
+              }
+              session.checkPromptCompletion(line);
+            }
+          }
           return;
-        case 'forward':
+        }
+        case 'forward': {
           // Buffer session/update notifications for replay on reconnect
-          sessionBuffer.bufferUpdate(line);
-          // Track prompt completion before forwarding
-          sessionBuffer.trackPromptCompletion(line);
+          const fwdActiveId = sessionStore.activeSessionId;
+          if (fwdActiveId) {
+            if (line.includes('"session/update"')) {
+              try {
+                const msg = JSON.parse(line);
+                if (msg.method === 'session/update') {
+                  const sid = msg.params?.sessionId;
+                  if (sid) {
+                    const targetSession = sessionStore.get(sid);
+                    if (targetSession) targetSession.recordUpdate(line);
+                  }
+                }
+              } catch { /* Not valid JSON */ }
+            }
+            // Track prompt completion before forwarding
+            const activeSession = sessionStore.get(fwdActiveId);
+            if (activeSession) activeSession.checkPromptCompletion(line);
+          }
 
-          // Capture session/new results (for replay buffer + in-memory listing)
+          // Capture session/new results (for replay + in-memory listing)
           if (pendingSessionNewIds.size > 0) {
             try {
               const msg = JSON.parse(line);
-              if (msg.id != null && pendingSessionNewIds.has(msg.id)) {
-                if (sessionBuffer.captureNewSession(msg.id, line, resolvedCwd)) {
-                  pendingSessionNewIds.delete(msg.id);
-                }
+              if (msg.id != null && pendingSessionNewIds.has(msg.id) && msg.result?.sessionId) {
+                const newSid = msg.result.sessionId;
+                sessionStore.activeSessionId = newSid;
+                const session = sessionStore.getOrCreate(newSid, resolvedCwd, JSON.stringify(msg.result));
+                session.activate();
+                sessionStore.registerRecent(newSid, resolvedCwd);
+                pendingSessionNewIds.delete(msg.id);
               }
             } catch {
-              // Not valid JSON — ignore
+              // Not valid JSON - ignore
             }
           }
 
-          // Capture session/load results (for replay buffer)
+          // Capture session/load results (for replay)
           if (pendingSessionLoadIds.size > 0) {
             try {
               const msg = JSON.parse(line);
-              if (msg.id != null && pendingSessionLoadIds.has(msg.id)) {
-                if (sessionBuffer.captureLoadSession(msg.id, line)) {
-                  pendingSessionLoadIds.delete(msg.id);
+              if (msg.id != null && pendingSessionLoadIds.has(msg.id) && msg.result) {
+                if (sessionStore.activeSessionId) {
+                  const session = sessionStore.get(sessionStore.activeSessionId);
+                  if (session) {
+                    session.result = JSON.stringify(msg.result);
+                  }
                 }
+                pendingSessionLoadIds.delete(msg.id);
               }
             } catch { /* Not valid JSON - ignore malformed session/load response */ }
           }
 
           ws.send(line);
           return;
+        }
       }
     });
 
@@ -516,7 +556,7 @@ export function startServer(options: ServerOptions): ServerResult {
       const action = routeClientMessage(raw, {
         cachedInitializeResponse,
         hasInitializePromise: !!initializePromise,
-        sessionBuffer,
+        sessionStore,
         cwd: resolvedCwd,
       });
 
@@ -525,12 +565,14 @@ export function startServer(options: ServerOptions): ServerResult {
           handleShellCommand(ws, action.id, action.command, resolvedCwd);
           return;
 
-        case 'clear_history':
-          sessionBuffer.clearHistory(action.sessionId);
+        case 'clear_history': {
+          const clearSession = sessionStore.get(action.sessionId);
+          if (clearSession) clearSession.clearHistory();
           if (action.id !== undefined) {
             ws.send(JSON.stringify({ jsonrpc: '2.0', id: action.id, result: { ok: true } }));
           }
           return;
+        }
 
         case 'rename_session': {
           const wsYamlPath = path.join(homedir(), '.copilot', 'session-state', action.sessionId, 'workspace.yaml');
@@ -547,7 +589,7 @@ export function startServer(options: ServerOptions): ServerResult {
           } catch (err) {
             log.session('failed to write workspace.yaml for rename: %O', err);
           }
-          sessionBuffer.updateSessionTitle(action.sessionId, action.summary);
+          sessionStore.updateSessionTitle(action.sessionId, action.summary);
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: action.id, result: { ok: true } }));
           return;
         }
@@ -579,19 +621,21 @@ export function startServer(options: ServerOptions): ServerResult {
           return;
 
         case 'session_load_replay': {
-          const replay = sessionBuffer.replaySession(action.sessionId);
-          if (!replay) {
-            // Race: buffer disappeared between route and execute - forward instead
+          const session = sessionStore.get(action.sessionId);
+          if (!session) {
+            // Race: session disappeared between route and execute - forward instead
             serverDebugLog.append('proto', 'session_load_forwarded', { sessionId: action.sessionId });
-            sessionBuffer.activeSessionId = action.sessionId;
+            sessionStore.activeSessionId = action.sessionId;
             pendingSessionLoadIds.add(action.id);
             if (activeBridge === bridge) {
               bridge.send(raw);
             }
             return;
           }
-          const replayResult = JSON.parse(replay.result);
-          if (replay.promptInProgress) {
+          sessionStore.activeSessionId = action.sessionId;
+          log.session('replaying %d buffered updates for session %s', session.history.length, action.sessionId);
+          const replayResult = JSON.parse(session.result);
+          if (session.hasActivePrompt) {
             replayResult.promptInProgress = true;
           }
           let skipReplay = false;
@@ -602,12 +646,12 @@ export function startServer(options: ServerOptions): ServerResult {
           serverDebugLog.append('proto', 'session_load_intercepted', {
             sessionId: action.sessionId,
             skipReplay,
-            historyLength: replay.history.length,
-            promptInProgress: replay.promptInProgress,
+            historyLength: session.history.length,
+            promptInProgress: session.hasActivePrompt,
           });
           ws.send(JSON.stringify({ jsonrpc: '2.0', id: action.id, result: replayResult }));
           if (!skipReplay) {
-            for (const line of replay.history) {
+            for (const line of session.history) {
               ws.send(line);
             }
           }
@@ -616,11 +660,11 @@ export function startServer(options: ServerOptions): ServerResult {
 
         case 'session_load_forward':
           serverDebugLog.append('proto', 'session_load_forwarded', { sessionId: action.sessionId });
-          sessionBuffer.activeSessionId = action.sessionId;
-          // Create buffer entry BEFORE forwarding so replayed session/update
+          sessionStore.activeSessionId = action.sessionId;
+          // Create session BEFORE forwarding so replayed session/update
           // notifications from the CLI are captured. The ACP spec requires
           // updates to arrive before the session/load response.
-          sessionBuffer.ensureBuffer(action.sessionId);
+          sessionStore.getOrCreate(action.sessionId, resolvedCwd);
           pendingSessionLoadIds.add(action.id);
           if (activeBridge === bridge) {
             bridge.send(raw);
@@ -632,7 +676,11 @@ export function startServer(options: ServerOptions): ServerResult {
             pendingSessionNewIds.add(action.trackSessionNew);
           }
           if (action.trackPrompt) {
-            sessionBuffer.trackPrompt(action.trackPrompt.id, action.trackPrompt.sessionId, action.trackPrompt.prompt);
+            const promptSession = sessionStore.get(action.trackPrompt.sessionId);
+            if (promptSession) {
+              promptSession.startPrompt(action.trackPrompt.id);
+              promptSession.recordUserMessage(action.trackPrompt.sessionId, action.trackPrompt.prompt);
+            }
           }
           if (activeBridge === bridge) {
             bridge.send(raw);

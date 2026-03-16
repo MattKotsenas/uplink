@@ -1,4 +1,4 @@
-import type { SessionBuffer } from './session-buffer.js';
+import type { SessionStore } from './session-store.js';
 
 // ─── Bridge → Client routing ─────────────────────────────────────────
 
@@ -69,7 +69,7 @@ export function routeClientMessage(
   opts: {
     cachedInitializeResponse: string | null;
     hasInitializePromise: boolean;
-    sessionBuffer: SessionBuffer;
+    sessionStore: SessionStore;
     cwd: string;
   },
 ): ClientMessageAction {
@@ -143,7 +143,7 @@ export function routeClientMessage(
   if (parsed?.method === 'session/load' && parsed.id != null) {
     const requestedId = parsed.params?.sessionId;
     if (requestedId) {
-      const hasBuffer = opts.sessionBuffer.hasSession(requestedId);
+      const hasBuffer = opts.sessionStore.has(requestedId);
       if (hasBuffer) {
         return {
           type: 'session_load_replay',
@@ -161,7 +161,7 @@ export function routeClientMessage(
   }
 
   // session/prompt - track for replay buffer
-  if (parsed?.method === 'session/prompt' && opts.sessionBuffer.activeSessionId) {
+  if (parsed?.method === 'session/prompt' && opts.sessionStore.activeSessionId) {
     const sid = parsed.params?.sessionId;
     if (sid && parsed.id != null) {
       forward.trackPrompt = {
