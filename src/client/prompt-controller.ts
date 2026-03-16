@@ -2,7 +2,7 @@ import type { AcpClient } from './acp-client.js';
 import { debugLog } from './acp-client.js';
 import type { Conversation } from './conversation.js';
 import type { SessionInfo } from '../shared/acp-types.js';
-import type { DebugLogExport, DebugSnapshot } from '../shared/debug-log.js';
+import type { DebugLogExport, DebugSnapshot, ServerSnapshot } from '../shared/debug-log.js';
 import { parseSlashCommand, findModelName } from './slash-commands.js';
 
 // --- Types -----------------------------------------------------------------
@@ -179,11 +179,13 @@ export async function handleDebugCommand(deps: PromptControllerDeps): Promise<vo
 
   // Fetch server-side debug entries
   let serverEntries: unknown[] = [];
+  let serverSnapshot: ServerSnapshot | undefined;
   try {
     const resp = await fetch('/api/debug');
     if (resp.ok) {
       const data = await resp.json();
       serverEntries = data.entries ?? [];
+      serverSnapshot = data.snapshot;
     }
   } catch {
     // Server unreachable - export client-only
@@ -201,6 +203,7 @@ export async function handleDebugCommand(deps: PromptControllerDeps): Promise<vo
     },
     server: {
       entries: serverEntries as DebugLogExport['server']['entries'],
+      snapshot: serverSnapshot,
     },
   };
 

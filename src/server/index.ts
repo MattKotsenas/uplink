@@ -124,7 +124,17 @@ export function startServer(options: ServerOptions): ServerResult {
   });
 
   app.get('/api/debug', (_req, res) => {
-    res.json({ entries: serverDebugLog.entries() });
+    const bufSnapshot = sessionBuffer.snapshot();
+    res.json({
+      entries: serverDebugLog.entries(),
+      snapshot: {
+        activeSessionId: bufSnapshot.activeSessionId,
+        sessionBuffers: bufSnapshot.buffers,
+        recentSessionCount: bufSnapshot.recentSessionCount,
+        bridgeAlive: activeBridge?.isAlive() ?? false,
+        hasCachedInit: cachedInitializeResponse != null,
+      },
+    });
   });
 
   // Sessions endpoint — forwards session/list to the CLI bridge and merges

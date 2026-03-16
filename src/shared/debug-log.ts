@@ -45,7 +45,17 @@ export interface DebugLogExport {
   };
   server: {
     entries: DebugEntry[];
+    snapshot?: ServerSnapshot;
   };
+}
+
+export interface ServerSnapshot {
+  activeSessionId: string | null;
+  /** Per-session buffer summary: session ID → history length. */
+  sessionBuffers: Record<string, { historyLength: number; hasActivePrompt: boolean }>;
+  recentSessionCount: number;
+  bridgeAlive: boolean;
+  hasCachedInit: boolean;
 }
 
 // ─── Ring Buffer ──────────────────────────────────────────────────────

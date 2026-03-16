@@ -155,4 +155,20 @@ export class SessionBuffer {
     this.sessionBuffers.clear();
     this.recentSessions.clear();
   }
+
+  /** Return a snapshot of buffer state for diagnostics. */
+  snapshot(): { activeSessionId: string | null; buffers: Record<string, { historyLength: number; hasActivePrompt: boolean }>; recentSessionCount: number } {
+    const buffers: Record<string, { historyLength: number; hasActivePrompt: boolean }> = {};
+    for (const [id, buf] of this.sessionBuffers) {
+      buffers[id] = {
+        historyLength: buf.history.length,
+        hasActivePrompt: buf.activePromptRequestId != null,
+      };
+    }
+    return {
+      activeSessionId: this.activeSessionId,
+      buffers,
+      recentSessionCount: this.recentSessions.size,
+    };
+  }
 }
