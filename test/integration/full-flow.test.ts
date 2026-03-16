@@ -379,6 +379,52 @@ describe('ACP bridge full-flow integration', () => {
   );
 
   it(
+    'switching sessions A → B → A replays session A history',
+    async () => {
+      const ws = await connectWS();
+      await rpcRequest(ws, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
+
+      // Create session A and send a prompt
+      const sessionA = (await rpcRequest<{ sessionId: string }>(ws, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      })).sessionId;
+      const { requestId: pidA, promise: pA } = promptAndCollect(ws, sessionA, 'simple hello from A');
+      await pA;
+
+      // Create session B and send a prompt
+      const sessionB = (await rpcRequest<{ sessionId: string }>(ws, 'session/new', {
+        cwd: process.cwd(),
+        mcpServers: [],
+      })).sessionId;
+      const { requestId: pidB, promise: pB } = promptAndCollect(ws, sessionB, 'simple hello from B');
+      await pB;
+
+      // Switch back to A — should replay A's history
+      const replayedMessages: string[] = [];
+      ws.on('message', (data) => replayedMessages.push(data.toString()));
+
+      await rpcRequest(ws, 'session/load', {
+        sessionId: sessionA,
+        cwd: process.cwd(),
+        mcpServers: [],
+      });
+
+      // Wait for replayed messages
+      await new Promise(r => setTimeout(r, 50));
+
+      const updates = replayedMessages.filter(m => m.includes('"session/update"'));
+      expect(updates.length).toBeGreaterThan(0);
+
+      // Session A should still be usable
+      const { requestId, promise } = promptAndCollect(ws, sessionA, 'simple after switching back');
+      const messages = await promise;
+      expectStopReason(messages, requestId, 'end_turn');
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
     'spawns new bridge after previous bridge dies',
     async () => {
       // First connection
