@@ -169,10 +169,11 @@ test('model label shows current model on the input border', async ({ page }) => 
   await page.goto('/');
   await expect(page.locator('#send-btn')).toBeEnabled({ timeout: 10000 });
 
-  // Should show the default model from session/new
+  // Should show a model label (from config or session/new default)
   const label = page.locator('#model-label');
   await expect(label).toBeVisible();
-  await expect(label).toContainText('Claude Sonnet 4.6');
+  const initialModel = await label.textContent();
+  expect(initialModel!.length).toBeGreaterThan(0);
 
   // Switch model via /model command
   const input = page.locator('#prompt-input');
