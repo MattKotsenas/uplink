@@ -182,4 +182,45 @@ describe('SessionBuffer', () => {
       expect(replay!.history).toHaveLength(0);
     });
   });
+
+  // ── ensureBuffer (session/load forward path) ─────────────────────
+
+  describe('ensureBuffer', () => {
+    it('creates buffer entry so bufferUpdate captures replayed notifications', () => {
+      // Simulates session/load forward: activeSessionId is set and buffer
+      // is ensured BEFORE the CLI replays. Without ensureBuffer, the
+      // replayed session/update notifications would be silently dropped.
+      buffer.activeSessionId = 'forwarded-sess';
+      buffer.ensureBuffer('forwarded-sess');
+
+      // CLI replays history (these arrive before the session/load response)
+      buffer.bufferUpdate(makeSessionUpdate('forwarded-sess'));
+      buffer.bufferUpdate(makeSessionUpdate('forwarded-sess'));
+
+      // Then the session/load response arrives
+      buffer.captureLoadSession(99, makeJsonRpcResponse(99, { sessionId: 'forwarded-sess' }));
+
+      const replay = buffer.replaySession('forwarded-sess');
+      expect(replay).not.toBeNull();
+      expect(replay!.history).toHaveLength(2);
+    });
+
+    it('without ensureBuffer, replayed notifications are lost', () => {
+      // This is the bug: activeSessionId is set but no buffer exists.
+      // bufferUpdate silently drops the notifications.
+      buffer.activeSessionId = 'forwarded-sess';
+      // NO ensureBuffer call
+
+      buffer.bufferUpdate(makeSessionUpdate('forwarded-sess'));
+      buffer.bufferUpdate(makeSessionUpdate('forwarded-sess'));
+
+      // captureLoadSession creates the buffer entry, but too late
+      buffer.captureLoadSession(99, makeJsonRpcResponse(99, { sessionId: 'forwarded-sess' }));
+
+      const replay = buffer.replaySession('forwarded-sess');
+      // Buffer exists (from captureLoadSession) but history is empty
+      expect(replay).not.toBeNull();
+      expect(replay!.history).toHaveLength(0); // BUG: should be 2
+    });
+  });
 });

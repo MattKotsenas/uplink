@@ -37,6 +37,9 @@ type PendingTimeout = {
 const pendingTimeouts = new Set<PendingTimeout>();
 let currentPromptId: number | string | null = null;
 
+/** Per-session history log: records raw session/update JSON lines for replay. */
+const sessionHistory = new Map<string, string[]>();
+
 // ─── I/O ──────────────────────────────────────────────────────────────
 
 function send(msg: object): void {
@@ -56,10 +59,15 @@ function sendNotification(method: string, params: unknown): void {
 }
 
 function sendSessionUpdate(update: SessionUpdate): void {
-  sendNotification("session/update", {
+  const params = {
     sessionId,
     update,
-  } satisfies SessionUpdateParams);
+  } satisfies SessionUpdateParams;
+  const line = JSON.stringify(createNotification("session/update", params));
+  // Record in session history for replay on session/load
+  const history = sessionHistory.get(sessionId);
+  if (history) history.push(line);
+  process.stdout.write(line + "\n");
 }
 
 function sendChunk(text: string): void {
@@ -404,6 +412,7 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
     }
     case "session/new": {
       sessionId = `mock-session-${Date.now()}`;
+      sessionHistory.set(sessionId, []);
       sendResponse(msg.id, {
         sessionId,
         models: {
@@ -448,6 +457,14 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
         sendError(msg.id, -32602, `Session ${params.sessionId} is already loaded`);
       } else {
         sessionId = params.sessionId;
+        // Per ACP spec: replay entire conversation as session/update
+        // notifications BEFORE responding to session/load.
+        const history = sessionHistory.get(sessionId);
+        if (history) {
+          for (const line of history) {
+            process.stdout.write(line + "\n");
+          }
+        }
         sendResponse(msg.id, {});
       }
       break;
@@ -461,6 +478,15 @@ async function handleRequest(msg: JsonRpcRequest): Promise<void> {
       currentPromptId = msg.id;
       const params = msg.params as SessionPromptParams;
       const text = extractPromptText(params);
+
+      // Record user message in session history for replay
+      const history = sessionHistory.get(sessionId);
+      if (history) {
+        history.push(JSON.stringify(createNotification("session/update", {
+          sessionId,
+          update: { sessionUpdate: "user_message_chunk", content: { type: "text", text } },
+        })));
+      }
 
       if (text.startsWith("tool")) {
         await scenarioToolCall(msg.id);
