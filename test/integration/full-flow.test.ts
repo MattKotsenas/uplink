@@ -602,16 +602,12 @@ describe('Session listing and rename', () => {
 
 // ── HTTP route tests ────────────────────────────────────────────────
 describe('HTTP routes', () => {
-  it('serves API token endpoint with config model', async () => {
+  it('serves API token endpoint', async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/token`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.token).toBe(sessionToken);
-    // Server should read the user's preferred model from ~/.copilot/config.json.
-    // The Copilot CLI's session/new response always returns "claude-sonnet-4.6"
-    // regardless of the config (github/copilot-cli#989, plus unreported model bug).
-    // We read the config directly so the client can show the correct model.
-    expect(body.configModel).toBeDefined();
+    expect(body.cwd).toBeDefined();
   });
 
   it('returns 404 for unknown routes when no static dir', async () => {
