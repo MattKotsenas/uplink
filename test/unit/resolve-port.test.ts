@@ -30,22 +30,39 @@ describe('resolvePort', () => {
     expect(result).toEqual({ port: 9005 });
   });
 
-  // ─── --tunnel-id (raw primitive, no smart port) ────────────────
+  // ─── --tunnel-id (user-managed) ─────────────────────────────────
 
-  it('returns random port for --tunnel-id without --port', () => {
+  it('reads tunnel port for --tunnel-id without --port', () => {
+    mockGetTunnelInfo.mockReturnValue({ exists: true, port: 55618 });
     const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel' });
-    expect(result).toEqual({ port: 0 });
+    expect(result.port).toBe(55618);
+    expect(result.tunnelName).toBeUndefined();
+    expect(mockGetTunnelInfo).toHaveBeenCalledWith('my-tunnel');
+  });
+
+  it('returns random port for --tunnel-id when tunnel has no port', () => {
+    mockGetTunnelInfo.mockReturnValue({ exists: true, port: undefined });
+    const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel' });
+    expect(result.port).toBe(0);
+  });
+
+  it('returns random port for --tunnel-id when tunnel does not exist', () => {
+    mockGetTunnelInfo.mockReturnValue({ exists: false });
+    const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel' });
+    expect(result.port).toBe(0);
+  });
+
+  it('uses explicit --port over tunnel config for --tunnel-id', () => {
+    // --port overrides the tunnel's saved port (session-only, no mutation)
+    mockGetTunnelInfo.mockReturnValue({ exists: true, port: 55618 });
+    const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel', explicitPort: 9000 });
+    expect(result.port).toBe(9000);
     expect(result.tunnelName).toBeUndefined();
   });
 
-  it('returns explicit port for --tunnel-id with --port', () => {
-    const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel', explicitPort: 8080 });
-    expect(result).toEqual({ port: 8080 });
-    expect(result.tunnelName).toBeUndefined();
-  });
-
-  it('does not call getTunnelInfo for --tunnel-id', () => {
-    resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel' });
+  it('skips getTunnelInfo for --tunnel-id when --port is explicit', () => {
+    const result = resolvePort({ cwd: '/project', tunnel: true, tunnelId: 'my-tunnel', explicitPort: 9000 });
+    expect(result.port).toBe(9000);
     expect(mockGetTunnelInfo).not.toHaveBeenCalled();
   });
 

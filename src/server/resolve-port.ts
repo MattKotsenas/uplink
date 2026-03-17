@@ -13,9 +13,18 @@ export interface ResolvePortResult {
 }
 
 export function resolvePort(opts: ResolvePortOptions): ResolvePortResult {
-  // --tunnel-id: raw primitive, no smart port
+  // --tunnel-id: user-managed tunnel — read its port, never modify it
   if (opts.tunnelId) {
-    return { port: opts.explicitPort ?? 0 };
+    if (opts.explicitPort != null) {
+      return { port: opts.explicitPort };
+    }
+
+    const info = getTunnelInfo(opts.tunnelId);
+    if (info.exists && info.port) {
+      return { port: info.port };
+    }
+
+    return { port: 0 };
   }
 
   // --tunnel without --tunnel-id: auto-persistent

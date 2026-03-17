@@ -90,10 +90,11 @@ export async function startTunnel(options: TunnelOptions): Promise<TunnelResult>
 
   if (tunnelId) {
     args.push(tunnelId);
-  } else {
-    // Ephemeral tunnel — specify port inline
-    args.push('-p', String(port));
   }
+
+  // Always specify port — even for named tunnels, to ensure the forwarded
+  // port matches the server's actual listen port.
+  args.push('-p', String(port));
 
   if (options.allowAnonymous) {
     args.push('--allow-anonymous');

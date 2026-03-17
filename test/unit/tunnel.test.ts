@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getDevTunnelNotFoundMessage, hashCwd, getTunnelInfo, createTunnel, updateTunnelPort } from '../../src/server/tunnel.js';
+import { EventEmitter } from 'node:events';
+import { getDevTunnelNotFoundMessage, hashCwd, getTunnelInfo, createTunnel, updateTunnelPort, startTunnel } from '../../src/server/tunnel.js';
 import * as childProcess from 'node:child_process';
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof childProcess>();
-  return { ...actual, execFileSync: vi.fn() };
+  return { ...actual, execFileSync: vi.fn(), spawn: vi.fn() };
 });
 
 const mockExecFileSync = vi.mocked(childProcess.execFileSync);
+const mockSpawn = vi.mocked(childProcess.spawn);
 
 describe('getDevTunnelNotFoundMessage', () => {
   afterEach(() => {
@@ -125,5 +127,125 @@ describe('updateTunnelPort', () => {
       .mockReturnValueOnce('');
     updateTunnelPort('name', 3000, 4000);
     expect(mockExecFileSync).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── startTunnel ──────────────────────────────────────────────────────
+
+describe('startTunnel', () => {
+  function createFakeChild() {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      killed: boolean;
+      exitCode: number | null;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.exitCode = null;
+    child.kill = vi.fn();
+
+    (child.stdout as any).setEncoding = vi.fn();
+    (child.stderr as any).setEncoding = vi.fn();
+
+    return child;
+  }
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('passes -p <port> for ephemeral tunnel (no tunnelId)', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 9005 });
+    child.stderr.emit('data', 'Connect via browser: https://abc123.usw2.devtunnels.ms\n');
+
+    await promise;
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'devtunnel',
+      ['host', '-p', '9005'],
+      expect.any(Object),
+    );
+  });
+
+  it('passes tunnelId AND -p <port> for named tunnel', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    // port is the server's actual listen port, which may differ from the
+    // port pre-configured on the tunnel. Passing -p ensures devtunnel
+    // forwards to the right local port regardless of tunnel config.
+    const promise = startTunnel({ port: 55618, tunnelId: 'my-tunnel' });
+    child.stderr.emit('data', 'Connect via browser: https://xyz789.usw2.devtunnels.ms\n');
+
+    await promise;
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'devtunnel',
+      ['host', 'my-tunnel', '-p', '55618'],
+      expect.any(Object),
+    );
+  });
+
+  it('includes --allow-anonymous when set', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 3000, tunnelId: 'named', allowAnonymous: true });
+    child.stdout.emit('data', 'https://tunnel.usw2.devtunnels.ms');
+
+    await promise;
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'devtunnel',
+      ['host', 'named', '-p', '3000', '--allow-anonymous'],
+      expect.any(Object),
+    );
+  });
+
+  it('resolves with URL from stdout', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 3000 });
+    child.stdout.emit('data', 'Connect via browser: https://abc.usw2.devtunnels.ms\n');
+
+    const result = await promise;
+    expect(result.url).toBe('https://abc.usw2.devtunnels.ms');
+  });
+
+  it('resolves with URL from stderr', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 3000 });
+    child.stderr.emit('data', 'https://abc.usw2.devtunnels.ms\n');
+
+    const result = await promise;
+    expect(result.url).toBe('https://abc.usw2.devtunnels.ms');
+  });
+
+  it('rejects when devtunnel exits without a URL', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 3000 });
+    child.emit('exit', 1, null);
+
+    await expect(promise).rejects.toThrow('devtunnel exited with code 1');
+  });
+
+  it('rejects with ENOENT hint when devtunnel is not found', async () => {
+    const child = createFakeChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const promise = startTunnel({ port: 3000 });
+    const err = new Error('spawn ENOENT') as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    child.emit('error', err);
+
+    await expect(promise).rejects.toThrow('devtunnel CLI not found');
   });
 });
